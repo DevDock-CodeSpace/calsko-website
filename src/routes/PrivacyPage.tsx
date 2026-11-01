@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 import { LogoMark, LogoWordmark } from '@/components/Logo'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
-const UPDATED = 'October 30, 2026'
+const UPDATED = 'November 1, 2026'
 
 /**
  * Public privacy policy at /privacy (no sign-in needed; linked from the login
@@ -80,6 +80,26 @@ export function PrivacyPage() {
           </p>
         </Section>
 
+        <Section title="If your project connects an error tracker">
+          <p>
+            A project lead or a group owner or admin can connect an error tracker, such as PostHog, or a webhook that
+            other tools send errors to. Once a day Calsko collects the errors it reports and keeps, for each kind of
+            error: its message and stack trace, the page and browser it happened in, how many times it happened each
+            day, and a link back to the tracker. A new kind of error becomes an issue in the project, which everyone in
+            the project can read like any other issue.
+          </p>
+          <p>
+            Calsko keeps the tracker’s API key encrypted and a webhook’s token only as a fingerprint, and never shows
+            either again. Removing the source deletes them and the error counts; the issues it made stay.
+          </p>
+          <p>
+            If your group has AI-written error issues switched on, the error (message, stack trace, page, browser and
+            counts) is sent to Google’s Gemini model once per new issue, to write its title and description, under the
+            same terms as Calsko AI below. Errors can contain whatever your app put in them, so keep personal data and
+            secrets out of error messages.
+          </p>
+        </Section>
+
         <Section title="If you use Calsko AI">
           <p>
             Calsko AI lets you type a request in your own words, such as “show my open issues” or “tell Sree I’ll be
@@ -103,9 +123,8 @@ export function PrivacyPage() {
             it, other people in your group can’t, and it is kept until your account or group is deleted. A message you ask it to prepare is held for up to ten minutes while it waits for your confirmation.
           </p>
           <p>
-            Google processes these requests under the terms of its Gemini API. On the free plan Calsko currently uses,
-            Google may also use them to improve its products, so don’t put anything in a request that you wouldn’t want
-            shared that way.
+            Google processes these requests under the terms of its paid Gemini API, under which Google doesn’t use
+            them to improve its products.
           </p>
         </Section>
 

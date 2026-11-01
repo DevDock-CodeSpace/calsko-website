@@ -18,6 +18,7 @@
     "test:mermaid": "deno test --allow-read tests/mermaid.test.ts",
     "test:emails": "deno test --allow-env supabase/functions/send-emails/templates.test.ts",
     "test:import": "deno test tests/issue-import.test.ts",
+    "test:errors": "deno test supabase/functions/_shared/error-tracking/",
     "db:types": "supabase gen types typescript --linked --schema public > src/types/database.types.ts",
     "seed:dev": "DEV_SUPABASE_SECRET_KEY=\"$(security find-generic-password -s 'DevDock Dev secret key' -w)\" DEV_ADMIN_PASSWORD=\"$(security find-generic-password -s 'DevDock Dev admin' -w)\" DEV_MEMBER_PASSWORD=\"$(security find-generic-password -s 'DevDock Dev member' -w)\" node --experimental-websocket scripts/seed-dev.mjs"
   },

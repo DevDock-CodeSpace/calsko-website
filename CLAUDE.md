@@ -13,7 +13,7 @@ Hosting: Vercel (SPA). `.github/workflows/deploy-supabase.yml` deploys migration
 
 ## Commands
 `npm run dev` (against DevDock Dev) · `dev:live` · `check` (lint + typecheck + build + perf budget; must pass before done; CI runs it)
-`test:ai` · `test:idle` · `test:reminders` · `test:mermaid` · `test:import` (Deno) · `db:types` (regenerate types) · `seed:dev`.
+`test:ai` · `test:idle` · `test:reminders` · `test:mermaid` · `test:import` · `test:errors` (Deno) · `db:types` (regenerate types) · `seed:dev`.
 
 ## Must-follow rules
 - **Performance:** read `.claude/skills/devdock-performance/SKILL.md` before any fetching, route, list, query, dependency or editor work.
@@ -46,5 +46,5 @@ Google and Microsoft via Supabase Auth (PKCE), plus one password admin account a
 
 ## Git and more detail
 Default branch `prod`; feature branches, PRs to `dev`. Don't commit before testing in a browser and the owner says so.
-`docs/AI_AGENT.md` (Calsko AI) · `docs/REMINDERS.md` (Notes) · `docs/MESSAGING_ARCHITECTURE.md` (Chat) · `docs/ISSUES_HUB_PLAN.md`
+`docs/AI_AGENT.md` (Calsko AI) · `docs/ERROR_TRACKING.md` (error trackers → issues; a new provider is one file) · `docs/REMINDERS.md` (Notes) · `docs/MESSAGING_ARCHITECTURE.md` (Chat) · `docs/ISSUES_HUB_PLAN.md`
 (Plans, hub) · `docs/DEV_ENVIRONMENT.md` · `docs/STATUS.md` · `README.md` (setup) · `brand/README.md`.
