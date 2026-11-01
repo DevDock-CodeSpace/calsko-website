@@ -104,6 +104,18 @@ export function rowToReport(row: unknown[], context: { host: string; projectId: 
   }
 }
 
+/** PostHog's own reason ("API key missing required scope 'query:read'"), short, for the source's status line. */
+export async function posthogReason(response: Response): Promise<string> {
+  const text = await response.text().catch(() => '')
+  try {
+    const body = JSON.parse(text) as { detail?: unknown; message?: unknown }
+    const detail = typeof body.detail === 'string' ? body.detail : typeof body.message === 'string' ? body.message : ''
+    return detail.replace(/\s+/g, ' ').trim().slice(0, 200)
+  } catch {
+    return ''
+  }
+}
+
 async function pull({ config, apiKey, since, until, fetch }: PullContext): Promise<ErrorReport[]> {
   const host = str(config.host) || 'https://us.posthog.com'
   const projectId = str(config.project_id)
@@ -114,12 +126,12 @@ async function pull({ config, apiKey, since, until, fetch }: PullContext): Promi
     signal: AbortSignal.timeout(40_000),
   })
   if (response.status === 401 || response.status === 403) {
-    await response.body?.cancel()
-    throw new SourceProblem('PostHog refused the API key. It needs the "Query: Read" scope for this project.')
+    const reason = await posthogReason(response)
+    throw new SourceProblem(`PostHog refused the API key${reason ? `: ${reason}` : '. It needs the "Query: Read" scope for this project.'}`)
   }
   if (response.status === 404) {
-    await response.body?.cancel()
-    throw new SourceProblem('PostHog has no project with that id here. Check the project id and US/EU.')
+    const reason = await posthogReason(response)
+    throw new SourceProblem(`PostHog has no project with that id here. Check the project id and US/EU.${reason ? ` (${reason})` : ''}`)
   }
   if (response.status === 429) {
     await response.body?.cancel()

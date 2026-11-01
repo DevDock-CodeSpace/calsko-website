@@ -4,9 +4,11 @@
 
 import type { ErrorProvider } from '../types.ts'
 import { posthogProvider } from './posthog.ts'
+import { sentryProvider } from './sentry.ts'
 import { webhookProvider } from './webhook.ts'
 
 export const PROVIDERS: Record<string, ErrorProvider> = {
   posthog: posthogProvider,
+  sentry: sentryProvider,
   webhook: webhookProvider,
 }

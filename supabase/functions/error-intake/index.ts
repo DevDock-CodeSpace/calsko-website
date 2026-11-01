@@ -67,6 +67,8 @@ Deno.serve(async (req) => {
         first_seen: r.firstSeen ?? null,
         last_seen: r.lastSeen ?? null,
         days: r.days,
+      days_mode: r.daysMode ?? 'add',
+      total: r.total ?? null,
       })),
     })
     if (error) throw error

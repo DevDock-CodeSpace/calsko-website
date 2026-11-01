@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { Bug, LoaderCircle, MoreHorizontal, Plus, RefreshCw, Webhook } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -14,7 +14,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { issueKeys } from '@/features/issues/api'
-import { useCurrentWorkspace } from '@/features/teams/hooks'
+import { teamPlansQuery } from '@/features/plans/api'
+import { useCurrentTeam, useCurrentWorkspace } from '@/features/teams/hooks'
 import { errorMessage } from '@/lib/errors'
 import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -26,10 +27,8 @@ import {
   rotateErrorSourceToken,
   syncErrorSource,
   updateErrorSource,
-  webhookUrl,
 } from '../api'
 import { ConnectErrorSourceDialog } from './ConnectErrorSourceDialog'
-import { CopyField } from './CopyField'
 import { WebhookDetails } from './WebhookDetails'
 
 /**
@@ -44,7 +43,7 @@ export function ErrorTrackingSection() {
   return (
     <SettingsSection
       title="Error tracking"
-      description="Errors from PostHog, or any tool that can send a webhook, become issues here (Backlog, labelled Error). Calsko collects them once a day; the same error again only adds to its count."
+      description="Errors from PostHog, Sentry, or any tool that can send a webhook, become issues here (Backlog, labelled Error and with where they came from, optionally in a plan). Calsko collects them once a day; the same error again only adds to its count."
     >
       <div className="space-y-4">
         {sources.length > 0 && (
@@ -65,6 +64,9 @@ export function ErrorTrackingSection() {
 
 function SourceRow({ source }: { source: ErrorSource }) {
   const queryClient = useQueryClient()
+  const { team } = useCurrentTeam()
+  // The group's plans, for "· into <plan>" (usually cached; loaded with the page).
+  const { data: plans } = useQuery({ ...teamPlansQuery(team.id), enabled: source.plan_id !== null })
   const [now] = useState(Date.now)
   const [editing, setEditing] = useState(false)
   const [removing, setRemoving] = useState(false)
@@ -100,8 +102,14 @@ function SourceRow({ source }: { source: ErrorSource }) {
     onError: (e) => toast.error(errorMessage(e)),
   })
 
-  const Icon = source.provider === 'posthog' ? Bug : Webhook
-  const kind = source.provider === 'posthog' ? `PostHog · project ${source.config.project_id ?? '?'}` : 'Webhook'
+  const Icon = source.provider === 'webhook' ? Webhook : Bug
+  const plan = plans?.find((p) => p.id === source.plan_id)
+  const kind =
+    source.provider === 'posthog'
+      ? `PostHog · project ${source.config.project_id ?? '?'}`
+      : source.provider === 'sentry'
+        ? `Sentry · ${source.config.org ?? '?'}/${source.config.project ?? '?'}`
+        : 'Webhook'
   const status = !source.enabled
     ? 'Switched off'
     : source.last_sync_message
@@ -114,6 +122,7 @@ function SourceRow({ source }: { source: ErrorSource }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">
           {source.name} <span className="font-normal text-muted-foreground">· {kind}</span>
+          {plan && <span className="font-normal text-muted-foreground"> · into {plan.name}</span>}
         </p>
         <p className={cn('truncate text-xs', source.last_sync_ok === false && source.enabled ? 'text-destructive' : 'text-muted-foreground')} title={status}>
           {status}
@@ -132,10 +141,10 @@ function SourceRow({ source }: { source: ErrorSource }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {source.provider === 'posthog' && <DropdownMenuItem onSelect={() => setEditing(true)}>Edit connection…</DropdownMenuItem>}
+          <DropdownMenuItem onSelect={() => setEditing(true)}>Edit…</DropdownMenuItem>
           {source.provider === 'webhook' && (
             <>
-              <DropdownMenuItem onSelect={() => setWebhook({ token: null })}>Show webhook URL</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setWebhook({ token: null })}>Webhook URL and setup…</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => rotate.mutate()}>New token…</DropdownMenuItem>
             </>
           )}
@@ -150,16 +159,16 @@ function SourceRow({ source }: { source: ErrorSource }) {
       {editing && <ConnectErrorSourceDialog workspaceId={source.workspace_id} open onOpenChange={setEditing} editing={source} />}
       {webhook && (
         <Dialog open onOpenChange={(open) => !open && setWebhook(null)}>
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="sm:max-w-xl">
             <DialogHeader>
               <DialogTitle>{webhook.token ? 'New token' : source.name}</DialogTitle>
               <DialogDescription>
                 {webhook.token
                   ? 'The old token stopped working. Update it wherever errors are sent from.'
-                  : 'The token was shown once, when the webhook was made. Make a new one from the menu if it is lost.'}
+                  : 'Where errors are sent, and how to set it up in your tools.'}
               </DialogDescription>
             </DialogHeader>
-            {webhook.token ? <WebhookDetails sourceId={source.id} token={webhook.token} /> : <CopyField label="Webhook URL" value={webhookUrl(source.id)} />}
+            <WebhookDetails sourceId={source.id} token={webhook.token} />
             <DialogFooter>
               <Button onClick={() => setWebhook(null)}>Done</Button>
             </DialogFooter>

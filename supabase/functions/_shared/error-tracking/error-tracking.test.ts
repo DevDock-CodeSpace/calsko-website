@@ -4,8 +4,10 @@ import { assert, assertEquals, assertNotEquals, assertRejects } from 'jsr:@std/a
 import { aiIssue, parseAiReply, templateIssue, type NewError } from './describe.ts'
 import { fingerprint, normalizeMessage, stackSignature } from './fingerprint.ts'
 import { buildQuery, exceptionText, posthogProvider, rowToReport } from './providers/posthog.ts'
+import { eventText, issueToReport, nextCursor, sentryProvider } from './providers/sentry.ts'
 import { parseCalskoWebhook, rawText } from './providers/webhook.ts'
 import { BadPayload, mergeReports, SourceProblem } from './types.ts'
+import { webhookGuides } from '../../../../src/features/errors/webhookGuides.ts'
 
 const NOW = new Date('2026-11-01T12:00:00Z')
 
@@ -156,7 +158,11 @@ Deno.test('posthog: pull merges days per issue and explains a refused key', asyn
   assertEquals((sent!.headers as Record<string, string>).Authorization, 'Bearer phx_test')
 
   const refused = (async () => new Response('no', { status: 403 })) as unknown as typeof fetch
-  await assertRejects(() => posthogProvider.pull!({ ...context, fetch: refused }), SourceProblem)
+  await assertRejects(() => posthogProvider.pull!({ ...context, fetch: refused }), SourceProblem, 'needs the "Query: Read" scope')
+  // PostHog's own reason is passed on when it gives one.
+  const scoped = (async () =>
+    new Response(JSON.stringify({ type: 'authentication_error', detail: "API key missing required scope 'query:read'" }), { status: 403 })) as unknown as typeof fetch
+  await assertRejects(() => posthogProvider.pull!({ ...context, fetch: scoped }), SourceProblem, "PostHog refused the API key: API key missing required scope 'query:read'")
 })
 
 // ---------------------------------------------------------------- issue text
@@ -214,4 +220,150 @@ Deno.test('aiIssue: AI text above, the exact error below; null when the reply is
   assertEquals(types, ['paragraph', 'heading', 'paragraph', 'heading', 'bulletList', 'heading', 'codeBlock', 'paragraph', 'paragraph'])
   assert(textOf(issue.description).includes(JSON.stringify(ERROR.raw).slice(1, -1)))
   assertEquals(await aiIssue(fake('sorry'), ERROR, 'PostHog'), null)
+})
+
+// ---------------------------------------------------------------- Sentry
+
+const DAY = (iso: string) => Date.parse(`${iso}T00:00:00Z`) / 1000
+
+const SENTRY_ISSUE = {
+  id: '4821',
+  title: "TypeError: Cannot read properties of undefined (reading 'total')",
+  culprit: 'applyCoupon(src/cart/coupon)',
+  permalink: 'https://acme.sentry.io/issues/4821/',
+  firstSeen: '2026-10-20T08:00:00Z',
+  lastSeen: '2026-11-01T09:00:00Z',
+  count: '12',
+  lifetime: { count: '340' },
+  stats: { '14d': [[DAY('2026-10-29'), 7], [DAY('2026-10-30'), 0], [DAY('2026-10-31'), 5], [DAY('2026-11-01'), 7]] as [number, number][] },
+}
+
+Deno.test('sentry: an issue becomes a report with whole-day counts from the sync window', () => {
+  const report = issueToReport(SENTRY_ISSUE, new Date('2026-10-31T06:00:00Z'))!
+  assertEquals(report.fingerprint, 'sentry_4821')
+  assertEquals(report.daysMode, 'set')
+  assertEquals(report.days, [{ day: '2026-10-31', count: 5 }, { day: '2026-11-01', count: 7 }])
+  assertEquals(report.total, 340)
+  assertEquals(report.url, 'https://acme.sentry.io/issues/4821/')
+  assert(report.raw.includes('at applyCoupon(src/cart/coupon)'))
+  assertEquals(issueToReport({ title: 'no id' }, NOW), null)
+})
+
+Deno.test('sentry: next page from the Link header only while it has results', () => {
+  const link =
+    '<https://sentry.io/api/0/x/?cursor=0:0:1>; rel="previous"; results="false"; cursor="0:0:1", ' +
+    '<https://sentry.io/api/0/x/?cursor=0:100:0>; rel="next"; results="true"; cursor="0:100:0"'
+  assertEquals(nextCursor(link), '0:100:0')
+  assertEquals(nextCursor(link.replace('results="true"', 'results="false"')), null)
+  assertEquals(nextCursor(null), null)
+})
+
+const SENTRY_EVENT = {
+  entries: [
+    {
+      type: 'exception',
+      data: {
+        values: [
+          {
+            type: 'TypeError',
+            value: "Cannot read properties of undefined (reading 'total')",
+            stacktrace: {
+              frames: [
+                { function: 'onSubmit', filename: 'src/cart/Checkout.tsx', lineNo: 88, colNo: 5 },
+                { function: 'applyCoupon', filename: 'src/cart/coupon.ts', lineNo: 42, colNo: 7 },
+              ],
+            },
+          },
+        ],
+      },
+    },
+    { type: 'request', data: { url: 'https://shop.test/checkout' } },
+  ],
+  tags: [{ key: 'browser', value: 'Chrome 130' }, { key: 'environment', value: 'production' }, { key: 'release', value: '2.15.0' }],
+}
+
+Deno.test('sentry: the latest event becomes the exact error, innermost frame first', () => {
+  const raw = eventText(SENTRY_EVENT, 'fallback')
+  const lines = raw.split('\n')
+  assertEquals(lines[0], "TypeError: Cannot read properties of undefined (reading 'total')")
+  assertEquals(lines[1], '    at applyCoupon (src/cart/coupon.ts:42:7)')
+  assertEquals(lines[2], '    at onSubmit (src/cart/Checkout.tsx:88:5)')
+  assert(raw.includes('Page: https://shop.test/checkout'))
+  assert(raw.includes('Environment: production'))
+  assertEquals(eventText({}, 'Just the title'), 'Just the title')
+})
+
+Deno.test('sentry: pull reads the project, pages issues and fills in the latest event', async () => {
+  const calls: string[] = []
+  const fake = (async (url: string) => {
+    calls.push(url)
+    if (url.includes('/projects/acme/web/')) return new Response(JSON.stringify({ id: '77' }))
+    if (url.includes('/events/latest/')) return new Response(JSON.stringify(SENTRY_EVENT))
+    if (url.includes('cursor=0%3A100%3A0')) return new Response(JSON.stringify([{ ...SENTRY_ISSUE, id: '9' }]), { headers: { link: '' } })
+    return new Response(JSON.stringify([SENTRY_ISSUE]), {
+      headers: { link: '<x>; rel="next"; results="true"; cursor="0:100:0"' },
+    })
+  }) as unknown as typeof fetch
+  const reports = await sentryProvider.pull!({
+    config: { host: 'https://de.sentry.io', org: 'acme', project: 'web' },
+    apiKey: 'sntryu_test',
+    since: new Date('2026-10-31T06:00:00Z'),
+    until: NOW,
+    fetch: fake,
+  })
+  assertEquals(reports.map((r) => r.fingerprint), ['sentry_4821', 'sentry_9'])
+  assert(reports[0].raw.startsWith('TypeError'))
+  const list = calls.find((c) => c.includes('/organizations/acme/issues/?'))!
+  assert(list.startsWith('https://de.sentry.io/'))
+  assert(list.includes('project=77') && list.includes('groupStatsPeriod=14d') && list.includes('query=&'))
+
+  const refused = (async () => new Response(JSON.stringify({ detail: 'Invalid token' }), { status: 401 })) as unknown as typeof fetch
+  await assertRejects(
+    () => sentryProvider.pull!({ config: { org: 'acme', project: 'web' }, apiKey: 'x', since: NOW, until: NOW, fetch: refused }),
+    SourceProblem,
+    'Sentry refused the token: Invalid token',
+  )
+})
+
+// ---------------------------------------------------------------- Datadog and New Relic guides
+
+Deno.test('guides: the Datadog and New Relic templates, filled in by those tools, are errors Calsko reads', async () => {
+  const guides = webhookGuides('https://x.supabase.co/functions/v1/error-intake?source=s', 'cerr_t')
+  const payload = (id: string) => guides.find((g) => g.id === id)!.blocks.find((b) => /payload/i.test(b.label))!.text
+  const ms = NOW.getTime() - 60_000
+
+  // Datadog substitutes $VARIABLES as text.
+  const datadog = payload('datadog')
+    .replace('$ALERT_TITLE', 'Checkout error rate is high')
+    .replace('$TEXT_ONLY_MSG', 'TypeError: x is undefined at applyCoupon')
+    .replace('$AGGREG_KEY', '9bd4ac313a4d1e8fae2482df7b77628')
+    .replace('$LINK', 'https://app.datadoghq.com/monitors/1234')
+    .replace('$DATE', String(ms))
+    .replace('$TAGS[env]', 'production')
+    .replace('$ALERT_ID', '1234').replace('$ALERT_TRANSITION', 'Triggered').replace('$ALERT_PRIORITY', 'P2').replace('$TAGS', 'env:production,service:checkout')
+  const [dd] = await parseCalskoWebhook(JSON.parse(datadog), NOW)
+  assertEquals(dd.title, 'Checkout error rate is high')
+  assertEquals(dd.fingerprint, 'ext_9bd4ac313a4d1e8fae2482df7b77628')
+  assertEquals(dd.url, 'https://app.datadoghq.com/monitors/1234')
+  assertEquals(dd.lastSeen, new Date(ms).toISOString())
+  assert(dd.raw.includes('Environment: production') && dd.raw.includes('Datadog monitor 1234'))
+
+  // New Relic renders Handlebars; {{json x}} writes a JSON value.
+  const values: Record<string, unknown> = {
+    issueTitle: 'High error rate on checkout-api',
+    'accumulations.conditionName.[0]': 'Error rate > 5%',
+    issuePageUrl: 'https://radar-api.service.newrelic.com/accounts/1/issues/abc',
+    priority: 'CRITICAL',
+    'entitiesData.names': ['checkout-api'],
+  }
+  const newrelic = payload('newrelic')
+    .replace(/\{\{json ([^}]+)\}\}/g, (_, key: string) => JSON.stringify(values[key.trim()]))
+    .replace('{{createdAt}}', String(ms))
+  const [nr] = await parseCalskoWebhook(JSON.parse(newrelic), NOW)
+  assertEquals(nr.title, 'High error rate on checkout-api')
+  assertEquals(nr.fingerprint, 'ext_Error rate > 5%')
+  assert(nr.raw.includes('"entities"') && nr.raw.includes('checkout-api'))
+
+  // The token is in the headers, never in the payload.
+  assert(!datadog.includes('cerr_t') && !newrelic.includes('cerr_t'))
 })

@@ -16,6 +16,13 @@ export type ErrorReport = {
   lastSeen?: string
   /** Occurrences per UTC day, as 'YYYY-MM-DD'. */
   days: { day: string; count: number }[]
+  /**
+   * 'add' (default): the days hold occurrences not reported before. 'set': each day's whole count
+   * (trackers that report per-day totals, like Sentry); only the increase is added.
+   */
+  daysMode?: 'add' | 'set'
+  /** The error's lifetime count in the tracker, when it says; Calsko's total is at least that. */
+  total?: number
 }
 
 /** What a pulled provider gets: its source's settings and secret, and the window to report. */

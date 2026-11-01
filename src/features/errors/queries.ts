@@ -5,16 +5,18 @@ import { supabase } from '@/lib/supabase'
 // What the settings loader needs (it's in the first load through the router), apart from api.ts's
 // mutations, which load with the settings page.
 
-export type ErrorProviderId = 'posthog' | 'webhook'
+export type ErrorProviderId = 'posthog' | 'sentry' | 'webhook'
 
 export type ErrorSource = {
   id: string
   workspace_id: string
   provider: ErrorProviderId
   name: string
-  config: { host?: string; project_id?: string }
+  config: { host?: string; project_id?: string; org?: string; project?: string }
   enabled: boolean
   label_id: string | null
+  /** The plan new issues go into. */
+  plan_id: string | null
   last_synced_at: string | null
   last_sync_ok: boolean | null
   last_sync_message: string | null
@@ -26,7 +28,7 @@ export const errorKeys = {
 }
 
 const SOURCE_COLUMNS =
-  'id, workspace_id, provider, name, config, enabled, label_id, last_synced_at, last_sync_ok, last_sync_message, created_at'
+  'id, workspace_id, provider, name, config, enabled, label_id, plan_id, last_synced_at, last_sync_ok, last_sync_message, created_at'
 
 /** The project's sources (managers only; others get an empty list from RLS). */
 export const errorSourcesQuery = (workspaceId: string) =>

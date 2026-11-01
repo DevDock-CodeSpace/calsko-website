@@ -5,7 +5,8 @@
 --
 -- A group with a project lead, a project member and someone else in the group. Checks who can connect
 -- sources and see them and their errors, that secrets stay secret, counting, the issue an error gets,
--- an error coming back after Done, a Canceled issue only counting, and "Sync now"'s limit. Rolls back.
+-- an error coming back after Done, a Canceled issue only counting, labels and plans, and "Sync now"'s
+-- limit. Rolls back.
 -- Raises an exception listing every failed check, so a clean run means every line held.
 
 begin;
@@ -55,6 +56,8 @@ declare
   v_issue    uuid;
   v_number   integer;
   v_number2  integer;
+  v_plan     uuid;
+  v_plan2    uuid;
   r          record;
 begin
   -- ------------------------------------------------------------------ fixtures
@@ -193,6 +196,16 @@ begin
     v_fail := v_fail || text 'activity says error tracking made it';
   end if;
   v_checks := v_checks + 1;
+  if not exists (select 1 from public.issue_label_links k join public.issue_labels l on l.id = k.label_id where k.issue_id = v_issue and l.name = 'renamed-errors' and l.color = 'violet') then
+    v_fail := v_fail || text 'the issue also carries its source''s label (webhook "Renamed" → renamed-errors)';
+  end if;
+  v_checks := v_checks + 1;
+  if private.error_source_label_name('posthog', 'Anything') <> 'posthog-errors'
+     or private.error_source_label_name('webhook', '  Sentry alerts! ') <> 'sentry-alerts-errors'
+     or private.error_source_label_name('webhook', '***') <> 'webhook-errors' then
+    v_fail := v_fail || text 'source label names: posthog-errors, <name>-errors, webhook-errors';
+  end if;
+  v_checks := v_checks + 1;
   if not exists (select 1 from public.issue_activity a where a.issue_id = v_issue and a.kind = 'label_added' and a.via = 'errors') then
     v_fail := v_fail || text 'the Error label is added by error tracking too';
   end if;
@@ -245,6 +258,71 @@ begin
     to_jsonb(now() + interval '1 second'), to_jsonb(current_date))::jsonb);
   v_checks := v_checks + 1;
   if (select needs_issue from public.error_groups where id = v_group) then v_fail := v_fail || text 'a Canceled issue only counts'; end if;
+
+  -- ------------------------------------------------------------------ plans
+  insert into public.plans (team_id, name, lead_id, created_by) values (v_team, 'Error fixes', v_lead, v_lead) returning id into v_plan;
+  insert into public.teams (id, name, slug, type, created_by)
+  values (gen_random_uuid(), 'Other group', 'errors-other-' || left(gen_random_uuid()::text, 8), 'general', v_lead)
+  returning id into v_plan2;
+  insert into public.plans (team_id, name) values (v_plan2, 'Elsewhere') returning id into v_plan2;
+
+  -- f2 still waits for its issue; an open issue of this source without a plan:
+  v_number := public.error_create_issue((select id from public.error_groups where source_id = v_hook and fingerprint = 'f2'), 'Network fails', '{"type":"doc"}', 0);
+  for r in select * from (values
+    ('a member can''t choose the plan', v_member, format('select public.set_error_source_plan(%L, %L)::text', v_hook, v_plan), 'ERR:42501'),
+    ('another group''s plan is refused', v_lead, format('select public.set_error_source_plan(%L, %L)::text', v_hook, v_plan2), 'ERR:23514'),
+    ('the lead chooses the plan; its one open issue without a plan moves in', v_lead, format('select public.set_error_source_plan(%L, %L, true)::text', v_hook, v_plan), '1')
+  ) as t(label, uid, sql, expected) loop
+    v_out := pg_temp.run_as(r.uid, r.sql);
+    v_checks := v_checks + 1;
+    if v_out <> r.expected then v_fail := v_fail || format('%s: got %s', r.label, v_out); end if;
+  end loop;
+  v_checks := v_checks + 1;
+  if (select plan_id from public.issues where workspace_id = v_ws and number = v_number) is distinct from v_plan
+     or (select plan_id from public.issues where workspace_id = v_ws and number = v_number2) is not null then
+    v_fail := v_fail || text 'open issues move into the plan; closed ones don''t';
+  end if;
+  -- New issues go straight into it.
+  perform public.error_record(v_hook, format('[{"fingerprint": "f9", "title": "New one", "days": [{"day": %s, "count": 1}]}]', to_jsonb(current_date))::jsonb);
+  v_number := public.error_create_issue((select id from public.error_groups where source_id = v_hook and fingerprint = 'f9'), 'New one', '{"type":"doc"}', 0);
+  v_checks := v_checks + 1;
+  if (select plan_id from public.issues where workspace_id = v_ws and number = v_number) is distinct from v_plan then
+    v_fail := v_fail || text 'new issues go into the source''s plan';
+  end if;
+  v_out := pg_temp.run_as(v_lead, format('select public.set_error_source_plan(%L, null)::text', v_hook));
+  v_checks := v_checks + 1;
+  if v_out <> '0' or (select plan_id from public.error_sources where id = v_hook) is not null then
+    v_fail := v_fail || format('the plan can be cleared: got %s', v_out);
+  end if;
+
+  -- ------------------------------------------------------------------ per-day totals and lifetime counts (Sentry)
+  perform public.error_record(v_hook, format('[{"fingerprint": "s1", "title": "Sentry one", "days_mode": "set", "total": 50, "days": [{"day": %s, "count": 5}]}]', to_jsonb(current_date))::jsonb);
+  select id into v_group from public.error_groups where source_id = v_hook and fingerprint = 's1';
+  v_checks := v_checks + 1;
+  if (select total_count from public.error_groups where id = v_group) <> 50 then v_fail := v_fail || text 'the lifetime total is kept'; end if;
+  perform public.error_record(v_hook, format('[{"fingerprint": "s1", "title": "Sentry one", "days_mode": "set", "total": 50, "days": [{"day": %s, "count": 5}]}]', to_jsonb(current_date))::jsonb);
+  v_checks := v_checks + 1;
+  if (select total_count from public.error_groups where id = v_group) <> 50 or (select count from public.error_group_days where group_id = v_group and day = current_date) <> 5 then
+    v_fail := v_fail || text 're-reading the same day adds nothing';
+  end if;
+  perform public.error_record(v_hook, format('[{"fingerprint": "s1", "title": "Sentry one", "days_mode": "set", "total": 50, "days": [{"day": %s, "count": 8}]}]', to_jsonb(current_date))::jsonb);
+  v_checks := v_checks + 1;
+  if (select total_count from public.error_groups where id = v_group) <> 53 or (select count from public.error_group_days where group_id = v_group and day = current_date) <> 8 then
+    v_fail := v_fail || format('a day that grew adds only the increase: got %s', (select total_count from public.error_groups where id = v_group));
+  end if;
+  v_checks := v_checks + 1;
+  if private.check_error_source_config('sentry', '{"host": "https://de.sentry.io", "org": " Acme ", "project": "Web-App"}') <> '{"host": "https://de.sentry.io", "org": "acme", "project": "web-app"}'::jsonb
+     or private.error_source_label_name('sentry', 'My Sentry') <> 'sentry-errors' then
+    v_fail := v_fail || text 'Sentry settings are cleaned up and its label is sentry-errors';
+  end if;
+  for r in select * from (values
+    ('a Sentry host outside the list', format($q$select public.create_error_source(%L, 'sentry', 'S', '{"host":"https://evil.test","org":"a","project":"b"}', 'sntryu_aaaaaaaa')::text$q$, v_ws), 'ERR:22023'),
+    ('Sentry without a token', format($q$select public.create_error_source(%L, 'sentry', 'S', '{"org":"a","project":"b"}', null)::text$q$, v_ws), 'ERR:22023')
+  ) as t(label, sql, expected) loop
+    v_out := pg_temp.run_as(v_lead, r.sql);
+    v_checks := v_checks + 1;
+    if v_out <> r.expected then v_fail := v_fail || format('%s: got %s', r.label, v_out); end if;
+  end loop;
 
   -- ------------------------------------------------------------------ the daily list and Sync now
   v_checks := v_checks + 1;

@@ -1,8 +1,10 @@
 # Error tracking
 
-Errors from an error tracker become issues in a project. The owner chose this design on 2026-11-01.
+Errors from an error tracker (PostHog, Sentry, Datadog and New Relic through the webhook, or anything else that can send one) become issues in a project. The owner chose this design on 2026-11-01.
 
 - A new kind of error gets an issue. AI writes it, and the exact error is copied below what the AI wrote.
+- Every error issue carries two labels: **Error**, and one for where it came from: `posthog-errors` for PostHog, or a webhook's name plus `-errors` ("Sentry alerts" → `sentry-alerts-errors`). Both are made in the project when missing.
+- A source can put its issues into a **plan**, chosen or named when connecting or in **Edit…** (`set_error_source_plan`). Choosing one also moves the source's open issues that have no plan yet, unless that box is unticked.
 - The same error happening again only adds to its count while its issue is open.
 - An error that comes back after its issue was **Done** gets a new issue that links to the old one ("Came back after QB-12").
 - A **Canceled** issue means "won't fix", so its error is only counted.
@@ -37,10 +39,12 @@ Flags:
 - Only the `error_*` functions write it.
 - Everyone who can see the project reads it. The issue page embeds it in `issueQuery`, so it costs no extra request.
 
+**Counting**: a report's days are added (`days_mode: add`, PostHog and webhooks: occurrences since the last report), or, for trackers that report whole days (`days_mode: set`, Sentry), only each day's increase over what Calsko already has is added, so re-reading a day never counts twice. `total`, when a tracker gives one, is the error's lifetime count there; Calsko's total is at least that.
+
 **What the functions do**:
 - `error_record(source, reports)` adds counts and flags errors that need an issue: new ones, ones whose issue was deleted, and ones back after Done.
 - `error_create_issue(group, title, description, priority)`:
-  - makes the issue in Backlog, with the source's label or the project's **Error** label (made when missing);
+  - makes the issue in Backlog, in the source's plan (`error_sources.plan_id`), labelled **Error** and with the source's label (`private.error_source_label_name`), both made when missing;
   - sets `devdock.via = 'errors'`, so Activity shows "Error tracking";
   - links the error to the new issue.
 - Only the service role can call them.
@@ -69,6 +73,7 @@ Everything after a provider is shared. A provider only turns what its tool has i
 | Provider | Way in | Fingerprint |
 |---|---|---|
 | `posthog` | Daily pull: HogQL over `$exception` events since the last sync, grouped by `$exception_issue_id` and day | `ph_<PostHog issue id>`, so Calsko's grouping matches PostHog's |
+| `sentry` | Daily pull: the organization issues API (issues with events since the last sync, up to 500, every status), their whole-day counts for 14 days (`days_mode: set`) and lifetime count (`total`), plus the latest event of the 25 most frequent for the exact stack. Personal auth token with `event:read`, `project:read`, `org:read`; US (`sentry.io`) or EU (`de.sentry.io`) | `sentry_<Sentry issue id>` |
 | `webhook` | Push, in Calsko's own format (below) | `ext_<theirs>` when the sender gives one, otherwise ours (`fingerprint.ts`) |
 
 **Our fingerprint** (`fingerprint.ts`) is for tools that don't group errors themselves:
@@ -105,6 +110,15 @@ Content-Type: application/json
 - Answers: `202 { recorded }`, `400` unreadable, `401` wrong source or token, source switched off, or the group's flag off.
 - Send a tracker's **alerts** (new error, regression, spike) or batches, not one request per occurrence.
 
+## Datadog and New Relic (guides, not adapters)
+
+Both let you write their webhook's body yourself, so they send the format above to a webhook source and need no code of their own (owner's choice, 2026-11-01). The webhook dialog (Webhook URL and setup…) has the steps and a copyable template for each, filled in with the URL (and the token, right after it's made); `src/features/errors/webhookGuides.ts` holds them, and `error-tracking.test.ts` checks that each template, once the tool fills it in, is an error Calsko reads.
+
+- **Datadog:** Integrations → Webhooks, custom headers `{"x-calsko-token": "…"}`, and `{{#is_alert}}@webhook-calsko{{/is_alert}}` in a monitor's message so only alerts are sent. `$AGGREG_KEY` is the fingerprint (one error per monitor and group), `$DATE` the time (ms), the monitor's message the error text.
+- **New Relic:** a Webhook destination with Bearer-token authorization, and a workflow notifying it on **Activated** only. `{{json …}}` writes JSON values; the alert condition's name is the fingerprint (one error per condition), `{{createdAt}}` the time (ms).
+
+Rollbar, Bugsnag, CloudWatch, Azure and Google Cloud are on hold (owner, 2026-11-01).
+
 ## Setup per Supabase project
 
 - **The daily run** needs these, run by hand like the email worker:
@@ -121,7 +135,7 @@ Content-Type: application/json
 ## Tests
 
 - `npm run test:errors` (Deno, no database): fingerprints, the webhook format, PostHog rows and request, the issue template, the AI reply and the description.
-- `psql "<dev or local URL>" -f supabase/tests/error_tracking.sql`: 54 checks covering access, secrets, counting, issues, regressions, Canceled, Sync now and removal. It rolls back.
+- `psql "<dev or local URL>" -f supabase/tests/error_tracking.sql`: 62 checks covering access, secrets, counting, issues, labels, plans, regressions, Canceled, Sync now and removal. It rolls back.
 
 ## Cost
 
