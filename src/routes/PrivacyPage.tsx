@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 import { LogoMark, LogoWordmark } from '@/components/Logo'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
-const UPDATED = 'November 1, 2026'
+const UPDATED = 'November 2, 2026'
 
 /**
  * Public privacy policy at /privacy (no sign-in needed; linked from the login
@@ -77,6 +77,19 @@ export function PrivacyPage() {
           <p>
             While connecting, GitHub asks the person connecting to sign in, so Calsko can check they really have access
             to that installation. Calsko uses that GitHub sign-in once and doesn’t keep it.
+          </p>
+        </Section>
+
+        <Section title="If your group publishes courses">
+          <p>
+            A group can list courses in a public catalog that anyone can open without signing in. A published course’s page shows its title,
+            description, price, the titles of its modules and lessons (never the lessons themselves), and the names and profile pictures of its
+            teachers, along with the group’s name and logo. Nothing else from the group is public, and a course that is back in draft disappears from
+            the catalog.
+          </p>
+          <p>
+            Enrolling from a course page adds you to that group as a member, enrolled in that course: the course’s teachers can then see your name
+            and your progress in it, like any student’s.
           </p>
         </Section>
 

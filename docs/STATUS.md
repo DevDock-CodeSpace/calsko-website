@@ -17,7 +17,7 @@ unless it says otherwise. Conventions live in [CLAUDE.md](../CLAUDE.md); setup i
 | GitHub: repos linked to projects, App connection, branch on In Progress, PR webhooks move issues | Built |
 | Meetings: Jitsi via JaaS, repeating meetings, calendar view, .ics, Google Calendar sync and RSVPs | Built |
 | Learning: modules, lessons, progress, a whiteboard per lesson | Built |
-| Learning platform: Teacher role, teachers create courses and co-teachers, per-course enrollment (open / invite only), single-use course codes (fee waived), Learning page (Teaching / My learning / Browse); [LEARNING_PLATFORM.md](LEARNING_PLATFORM.md) | Branch `feat/learning-platform` |
+| Learning platform: Teacher role, teachers create courses and co-teachers, per-course enrollment (open / invite only), single-use course codes (fee waived), Learning page (Teaching / My learning / Browse), public course catalog (price ₹/$, publish, /learn pages; free courses joinable, paid via codes until checkout); [LEARNING_PLATFORM.md](LEARNING_PLATFORM.md) | Catalog on branch `feat/course-catalog` |
 | Notes: private notes with an optional time that pops up (pg_cron → bell) | Built |
 | Calsko AI: assistant that works through the app's own tools (flag `ask_devdock`) | Built |
 | Platform admin console, per-group feature flags | Built |
@@ -34,7 +34,7 @@ unless it says otherwise. Conventions live in [CLAUDE.md](../CLAUDE.md); setup i
 - Files: "Convert to diagram" on Mermaid code blocks, then "Linked from" on the whiteboard page.
 - Chat: instant calls from a conversation (needs its own audience rule in `jaas-token`); revoke the old column UPDATE grant
   on `public.messages` once every open client uses `edit_message`/`delete_message`.
-- Learning platform next: public course catalog (price, publish), then checkout issuing paid codes. Exercises is still a placeholder page.
+- Learning platform next: checkout issuing paid codes (Razorpay). Exercises is still a placeholder page.
 - Issue display options (group by, sub-group, ordering, properties) are not built.
 - Error tracking: more providers (Rollbar/Bugsnag/Datadog/New Relic, then CloudWatch/Azure/Google), and closing an issue resolving the error in the tracker.
 

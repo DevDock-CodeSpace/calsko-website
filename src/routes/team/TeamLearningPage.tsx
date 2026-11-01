@@ -1,11 +1,12 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
-import { ArrowRight, BookOpen, KeyRound, LoaderCircle, Plus, Users } from 'lucide-react'
+import { ArrowRight, BookOpen, ExternalLink, KeyRound, LoaderCircle, Plus, Users } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/PageHeader'
 import { PersonAvatar } from '@/components/PersonRow'
 import { Button } from '@/components/ui/button'
+import { formatBothPrices } from '@/features/catalog/price'
 import { useCollectionView } from '@/features/collections/hooks'
 import { JoinWithCodeDialog } from '@/features/learning/components/JoinWithCodeDialog'
 import { NewCourseDialog } from '@/features/learning/components/NewCourseDialog'
@@ -56,6 +57,13 @@ export function TeamLearningPage() {
             : 'Your courses, what to do next, and courses you can join.'
         }
       >
+        {overview.teaching.some((c) => c.published) && (
+          <Button asChild variant="ghost" size="sm">
+            <Link to={`/learn/${team.slug}`} target="_blank">
+              <ExternalLink /> Public catalog
+            </Link>
+          </Button>
+        )}
         <Button variant="outline" size="sm" onClick={() => setJoining(true)}>
           <KeyRound /> Use a course code
         </Button>
@@ -162,6 +170,14 @@ function TeachingRow({ course, now }: { course: TeachingCourse; now: number }) {
           <span className="truncate">{course.title}</span>
           <span className="shrink-0 rounded border px-1.5 text-[11px] font-normal text-muted-foreground">
             {course.enrollment === 'open' ? 'Open' : 'Invite only'}
+          </span>
+          <span
+            className={cn(
+              'shrink-0 rounded px-1.5 text-[11px] font-normal',
+              course.published ? 'bg-brand/10 text-brand' : 'border text-muted-foreground',
+            )}
+          >
+            {course.published ? `Published · ${formatBothPrices(course)}` : 'Draft'}
           </span>
           {!course.mine && <span className="shrink-0 text-[11px] font-normal text-muted-foreground">not yours</span>}
         </Link>

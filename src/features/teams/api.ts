@@ -8,7 +8,7 @@ import { logError } from '@/lib/error-tracking'
 
 export type TeamRole = Database['public']['Enums']['team_role']
 export type TeamType = Database['public']['Enums']['team_type']
-export type Team = Pick<Tables<'teams'>, 'id' | 'name' | 'slug' | 'type' | 'logo_path'>
+export type Team = Pick<Tables<'teams'>, 'id' | 'name' | 'slug' | 'type' | 'logo_path' | 'teachers_set_prices'>
 /** `features`: the keys of the feature flags switched on for the group (features/flags). */
 export type TeamMembership = { role: TeamRole; joinedAt: string; team: Team; features: readonly string[] }
 export type Invite = Pick<
@@ -34,7 +34,7 @@ export const myTeamsQuery = (userId: string) =>
         .from('team_members')
         // enabled_features is a computed column (public.enabled_features): the group's flags ride along
         // with the groups, so they cost no request of their own. The generated types can't see it.
-        .select('role, joined_at, team:teams(id, name, slug, type, logo_path, enabled_features)')
+        .select('role, joined_at, team:teams(id, name, slug, type, logo_path, teachers_set_prices, enabled_features)')
         .eq('user_id', userId)
         .order('joined_at')
         .overrideTypes<MembershipRow[], { merge: false }>()
@@ -83,7 +83,7 @@ export async function createTeam(input: { name: string; slug: string; type: Team
   const { data, error } = await supabase
     .from('teams')
     .insert({ name: input.name.trim(), slug: input.slug, type: input.type })
-    .select('id, name, slug, type, logo_path')
+    .select('id, name, slug, type, logo_path, teachers_set_prices')
     .single()
   if (error) {
     throw toDataError('create the group', error, {
@@ -107,6 +107,13 @@ export async function joinTeam(inviteCode: string): Promise<{ teamId: string; co
   }
   const result = data as { team_id: string; workspace_id: string | null }
   return { teamId: result.team_id, courseId: result.workspace_id }
+}
+
+/** Whether teachers price and publish their own courses (else only owners and admins). */
+export async function setTeachersSetPrices(teamId: string, value: boolean) {
+  const { data, error } = await supabase.from('teams').update({ teachers_set_prices: value }).eq('id', teamId).select('id')
+  if (error) throw toDataError('save the setting', error)
+  requireAffected(data, 'set teachers_set_prices')
 }
 
 export async function updateTeam(teamId: string, input: { name: string; type: TeamType }) {

@@ -61,6 +61,27 @@ export const router = createBrowserRouter([
     hydrateFallbackElement: <AuthLoading />,
     errorElement: <RouteErrorPage />,
   },
+  // The public course catalog: an academy's published courses and one course's page, for anyone (no session
+  // needed; a signed-in visitor's buttons change). Lazy; the loaders read through public functions only.
+  {
+    path: '/learn/:teamSlug',
+    // Page and loader come in one lazy chunk: nothing of the catalog is in the app's first load.
+    lazy: async () => {
+      const learn = await import('@/routes/learn')
+      return { Component: learn.CatalogPage, loader: learn.catalogLoader }
+    },
+    hydrateFallbackElement: <AuthLoading />,
+    errorElement: <RouteErrorPage />,
+  },
+  {
+    path: '/learn/:teamSlug/:courseId',
+    lazy: async () => {
+      const learn = await import('@/routes/learn')
+      return { Component: learn.PublicCoursePage, loader: learn.publicCourseLoader }
+    },
+    hydrateFallbackElement: <AuthLoading />,
+    errorElement: <RouteErrorPage />,
+  },
   // Public: no loader, so no session is needed (linked from Google's consent screen).
   { path: '/privacy', lazy: async () => ({ Component: (await import('@/routes/PrivacyPage')).PrivacyPage }), errorElement: <RouteErrorPage /> },
   {

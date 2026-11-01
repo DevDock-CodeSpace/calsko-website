@@ -15,7 +15,8 @@ const isActiveModule = (module: Database['public']['Enums']['workspace_module'])
 export type WorkspaceAccess = Database['public']['Enums']['workspace_access']
 export type Workspace = Pick<
   Tables<'workspaces'>,
-  'id' | 'team_id' | 'title' | 'description' | 'type' | 'issue_key' | 'access' | 'collection_id' | 'enrollment' | 'created_at' | 'updated_at'
+  | 'id' | 'team_id' | 'title' | 'description' | 'type' | 'issue_key' | 'access' | 'collection_id' | 'enrollment'
+  | 'published' | 'price_inr' | 'price_usd_cents' | 'created_at' | 'updated_at'
 > & {
   /** Enabled tools; drives the workspace tabs. */
   modules: WorkspaceModule[]
@@ -127,7 +128,7 @@ export const workspaceQuery = (workspaceId: string) =>
     queryFn: async (): Promise<Workspace | null> => {
       const { data, error } = await supabase
         .from('workspaces')
-        .select('id, team_id, title, description, type, issue_key, access, collection_id, enrollment, created_at, updated_at, workspace_modules(module)')
+        .select('id, team_id, title, description, type, issue_key, access, collection_id, enrollment, published, price_inr, price_usd_cents, created_at, updated_at, workspace_modules(module)')
         .eq('id', workspaceId)
         .maybeSingle()
       if (error) throw toDataError('load the workspace', error)

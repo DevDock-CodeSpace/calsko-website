@@ -25,6 +25,10 @@ export type TeachingCourse = {
   unused_codes: number
   /** False for courses an admin sees but doesn't teach. */
   mine: boolean
+  /** In the group's public catalog (/learn/<group>). */
+  published: boolean
+  price_inr: number | null
+  price_usd_cents: number | null
 }
 
 export type LearningCourse = {
@@ -132,4 +136,16 @@ export async function createCourseCodes(workspaceId: string, count: number, note
 export async function revokeCourseCode(codeId: string) {
   const { error } = await supabase.rpc('revoke_course_code', { p_code_id: codeId })
   if (error) throw toDataError('withdraw the code', error, passMessage(error))
+}
+
+/** A course's listing: published or draft, and its price in rupees and US cents (null = free). */
+export async function setCourseListing(workspaceId: string, listing: { published: boolean; priceInr: number | null; priceUsdCents: number | null }) {
+  const { error } = await supabase.rpc('set_course_listing', {
+    p_workspace_id: workspaceId,
+    p_published: listing.published,
+    // null = free; the generated types don't know the arguments may be null.
+    p_price_inr: listing.priceInr as number,
+    p_price_usd_cents: listing.priceUsdCents as number,
+  })
+  if (error) throw toDataError('save the listing', error, passMessage(error))
 }
