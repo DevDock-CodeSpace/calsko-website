@@ -23,6 +23,8 @@ const NOT_LIVE: ((key: readonly unknown[]) => boolean)[] = [
   (key) => key[0] === 'reminders' && key[1] === 'issue-options',
   // A plan's page carries its Brief's text; doc events don't reach this key.
   (key) => key[0] === 'plans' && key[1] === 'detail',
+  // The Learning page's numbers come from several tables in one call, and course_codes isn't published.
+  (key) => key[0] === 'learning' && (key[1] === 'overview' || key[1] === 'codes'),
   // issue_import_people isn't published.
   (key) => key[0] === 'issues' && key[1] === 'import-people',
   // Issue titles in Starred: issue events refresh lists and the open issue, not this.

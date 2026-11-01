@@ -9,6 +9,7 @@ import { docLoader, filesLoader, filesShouldRevalidate } from '@/features/docs/l
 import { cycleLoader, issueLoader, issuesLoader } from '@/features/issues/loaders'
 import { issueImportLoader, workspaceSettingsLoader } from '@/features/issues/import/loaders'
 import { hubSettingsLoader, hubSprintsLoader, hubViewsLoader, issuesHubLoader, planLoader } from '@/features/issues/hub/loaders'
+import { teamLearningLoader } from '@/features/learning/platformLoaders'
 import { learningLoader, lessonLoader } from '@/features/learning/loaders'
 import { liveSessionLoader } from '@/features/live/loaders'
 import { githubCallbackLoader, githubTabLoader } from '@/features/repos/loaders'
@@ -57,6 +58,27 @@ export const router = createBrowserRouter([
     path: '/admin-login',
     loader: loginLoader,
     lazy: async () => ({ Component: (await import('@/routes/AdminLoginPage')).AdminLoginPage }),
+    hydrateFallbackElement: <AuthLoading />,
+    errorElement: <RouteErrorPage />,
+  },
+  // The public course catalog: an academy's published courses and one course's page, for anyone (no session
+  // needed; a signed-in visitor's buttons change). Lazy; the loaders read through public functions only.
+  {
+    path: '/learn/:teamSlug',
+    // Page and loader come in one lazy chunk: nothing of the catalog is in the app's first load.
+    lazy: async () => {
+      const learn = await import('@/routes/learn')
+      return { Component: learn.CatalogPage, loader: learn.catalogLoader }
+    },
+    hydrateFallbackElement: <AuthLoading />,
+    errorElement: <RouteErrorPage />,
+  },
+  {
+    path: '/learn/:teamSlug/:courseId',
+    lazy: async () => {
+      const learn = await import('@/routes/learn')
+      return { Component: learn.PublicCoursePage, loader: learn.publicCourseLoader }
+    },
     hydrateFallbackElement: <AuthLoading />,
     errorElement: <RouteErrorPage />,
   },
@@ -132,6 +154,8 @@ export const router = createBrowserRouter([
               { path: 'diagrams', element: <DiagramsRedirect /> },
               // Full-bleed: the canvas takes the whole area under the top bar (DiagramView sets its height).
               { path: 'diagrams/:diagramId', loader: diagramLoader, handle: FULL_BLEED, element: <DiagramPage /> },
+              // Learning (learning platform): Teaching, My learning and Browse courses, from one call.
+              { path: 'learning', loader: teamLearningLoader, lazy: async () => ({ Component: (await import('@/routes/team/TeamLearningPage')).TeamLearningPage }) },
               {
                 // The Issues hub (docs/ISSUES_HUB_PLAN.md): My issues, Plans, Sprints, Views. The layout checks the
                 // group has issues; issuesHubLoader starts the group's issues, plans and people. Tabs are lazy.

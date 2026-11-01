@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { useAuth, useSignOut, useUserIdentity } from '@/features/auth/hooks'
 import { createTeam, joinTeam, myTeamsQuery, SLUG_PATTERN, type TeamType } from '@/features/teams/api'
 import { startPath } from '@/features/teams/landing'
+import { learningPath } from '@/features/teams/nav'
 import { teamTypes } from '@/features/teams/permissions'
 import { slugify } from '@/features/teams/slug'
 import { cn } from '@/lib/utils'
@@ -239,11 +240,12 @@ function JoinTeamForm() {
 
   const join = useMutation({
     mutationFn: () => joinTeam(code),
-    onSuccess: async (teamId) => {
+    onSuccess: async ({ teamId, courseId }) => {
       await queryClient.invalidateQueries({ queryKey: ['teams'] })
       const memberships = await queryClient.fetchQuery(myTeamsQuery(user.id))
       const joined = memberships.find((m) => m.team.id === teamId)
-      navigate(joined ? startPath(joined.team.slug) : '/app')
+      // A course code opens the course it enrolled in.
+      navigate(joined ? (courseId ? learningPath(joined.team.slug, courseId) : startPath(joined.team.slug)) : '/app')
     },
   })
 
@@ -254,7 +256,7 @@ function JoinTeamForm() {
 
   return (
     <form onSubmit={submit}>
-      <Label htmlFor="invite-code">Invite code</Label>
+      <Label htmlFor="invite-code">Invite or course code</Label>
       <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
         <Input
           id="invite-code"
@@ -269,7 +271,7 @@ function JoinTeamForm() {
         />
         <Button type="submit" size="lg" className="h-11 sm:min-w-32" disabled={!code.trim() || join.isPending}>
           {join.isPending && <LoaderCircle className="animate-spin" />}
-          Join group
+          Join
         </Button>
       </div>
       {join.isError ? (
@@ -279,8 +281,8 @@ function JoinTeamForm() {
         </p>
       ) : (
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-          You’ll join as a member and see what’s open to the whole group. Courses and projects that aren’t are shared
-          with you separately.
+          A group invite code adds you to the group. A course code adds you to the group and enrolls you in that
+          course.
         </p>
       )}
     </form>

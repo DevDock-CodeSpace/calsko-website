@@ -1,10 +1,11 @@
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { ArrowRight } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { Suspense, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { PersonAvatar } from '@/components/PersonRow'
+import { courseOverviewLearning } from '@/features/learning/screens'
 import { useCurrentTeam, useCurrentWorkspace } from '@/features/teams/hooks'
-import { workspacePath, workspaceTabDefs } from '@/features/teams/nav'
+import { workspacePath } from '@/features/teams/nav'
 import { workspaceRoleLabel, workspaceTypes } from '@/features/teams/permissions'
 import { workspaceMembersQuery, type WorkspaceMember } from '@/features/workspaces/api'
 import { formatDate, timeAgo } from '@/lib/format'
@@ -15,7 +16,7 @@ const ACTIVITY = 5
 /**
  * Workspace overview: what this workspace is and what's happening in it.
  * The enabled tools are already the tabs above, so they aren't listed again.
- * Continue learning / Active issues are empty states until those tools exist.
+ * Continue learning shows the student's next lesson (the teacher's shortcuts); Active issues is still a placeholder.
  */
 export function WorkspaceOverviewPage() {
   const { team } = useCurrentTeam()
@@ -46,8 +47,10 @@ export function WorkspaceOverviewPage() {
         </Section>
 
         {enabled.has('learning') && (
-          <Section title="Continue learning" action={<TabLink to={`${base}/learning`}>Learning</TabLink>}>
-            <EmptyState>{workspaceTabDefs.learning.soon} Your next lesson will show up here.</EmptyState>
+          <Section title={can.canEdit ? 'Course' : 'Continue learning'} action={<TabLink to={`${base}/learning`}>Learning</TabLink>}>
+            <Suspense fallback={<div className="h-20 animate-pulse rounded-lg bg-muted" />}>
+              <courseOverviewLearning.Component />
+            </Suspense>
           </Section>
         )}
 

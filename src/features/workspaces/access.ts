@@ -25,12 +25,13 @@ export function accessLabel(access: WorkspaceAccess, collection: Collection | un
 }
 
 /**
- * What a new workspace starts with: open to its collection when it is created inside one, open to
- * the group for a course in a learning group, otherwise only the people added.
+ * What a new workspace starts with: courses are enrolled-only (students enroll, are added, or use a
+ * course code: the learning platform); others are open to their collection when created inside one,
+ * otherwise only the people added.
  */
-export function defaultAccess(teamType: TeamType, type: WorkspaceType, collectionId: string | null): WorkspaceAccess {
-  if (collectionId) return 'collection'
-  return teamType === 'learning' && type === 'course' ? 'group' : 'members'
+export function defaultAccess(_teamType: TeamType, type: WorkspaceType, collectionId: string | null): WorkspaceAccess {
+  if (type === 'course') return 'members'
+  return collectionId ? 'collection' : 'members'
 }
 
 /** How wide a setting is, to tell opening up from narrowing down. */

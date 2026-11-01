@@ -121,11 +121,22 @@ export function hasTeamIssues(type: TeamType, workspaces: readonly { type: Works
  * when `issues` is set, see hasTeamIssues, then your Reminders), then the
  * workspaces, then Members/Settings.
  */
+/**
+ * Whether the group has a Learning page (Teaching / My learning / Browse): learning groups always, any
+ * other group once it has a course the caller can see, and for its teachers.
+ */
+export function hasTeamLearning(type: TeamType, workspaces: readonly { type: WorkspaceType }[], role?: string): boolean {
+  return type === 'learning' || role === 'teacher' || workspaces.some((w) => w.type === 'course')
+}
+
+export const teamLearningPath = (slug: string) => `${teamPath(slug)}/learning`
+
 export function getTeamNav(
   slug: string,
   issues = false,
+  learning = false,
 ): {
-  tools: (NavItem & { id: TeamToolId | 'issues' })[]
+  tools: (NavItem & { id: TeamToolId | 'issues' | 'learning' })[]
   members: NavItem
   settings: NavItem
   messages: NavItem
@@ -135,6 +146,8 @@ export function getTeamNav(
   return {
     messages: { title: 'Chat', to: `${base}/messages`, icon: MessageSquare },
     tools: [
+      // A learning group's lessons first: what students and teachers open most.
+      ...(learning ? [{ id: 'learning' as const, title: 'Learning', icon: workspaceTabDefs.learning.icon, to: teamLearningPath(slug) }] : []),
       ...TEAM_TOOLS.map((id) => ({
         id,
         ...(id === 'docs' ? { ...FILES_TAB, also: `${base}/diagrams` } : { title: workspaceTabDefs[id].title, icon: workspaceTabDefs[id].icon }),

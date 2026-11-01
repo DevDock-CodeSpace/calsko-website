@@ -6,6 +6,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { LogoMark } from '@/components/Logo'
 import { PageHeader } from '@/components/PageHeader'
 import { DangerRow, SettingsSection } from '@/components/SettingsSection'
+import { CatalogSettingsSection } from '@/features/catalog/components/CatalogSettingsSection'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -23,7 +24,7 @@ import {
 } from '@/features/teams/api'
 import { CollectionsSection } from '@/features/collections/components/CollectionsSection'
 import { useCurrentTeam, useExitTeam } from '@/features/teams/hooks'
-import { defaultWorkspaceType, teamRoleLabel, teamTypes, workspaceTypes } from '@/features/teams/permissions'
+import { defaultWorkspaceType, teamRoleName, teamTypes, workspaceTypes } from '@/features/teams/permissions'
 import { errorMessage } from '@/lib/errors'
 
 export function TeamSettingsPage() {
@@ -31,10 +32,11 @@ export function TeamSettingsPage() {
 
   return (
     <>
-      <PageHeader title="Group settings" description={`${team.name} · your role: ${teamRoleLabel[role]}`} />
+      <PageHeader title="Group settings" description={`${team.name} · your role: ${teamRoleName(role, team.type)}`} />
       <div>
         <GeneralSection key={team.id} />
         <BrandingSection />
+        {team.type !== 'development' && <CatalogSettingsSection />}
         {can.canManageWorkspaces && <CollectionsSection />}
         <TeamReposSection />
         {(can.canLeave || can.canDelete) && <DangerSection />}
