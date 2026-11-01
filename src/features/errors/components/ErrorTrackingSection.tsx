@@ -45,7 +45,7 @@ export function ErrorTrackingSection() {
   return (
     <SettingsSection
       title="Error tracking"
-      description="Errors from PostHog, or any tool that can send a webhook, become issues here (Backlog, labelled Error and with where they came from, optionally in a plan). Calsko collects them once a day; the same error again only adds to its count."
+      description="Errors from PostHog, Sentry, or any tool that can send a webhook, become issues here (Backlog, labelled Error and with where they came from, optionally in a plan). Calsko collects them once a day; the same error again only adds to its count."
     >
       <div className="space-y-4">
         {sources.length > 0 && (
@@ -104,9 +104,14 @@ function SourceRow({ source }: { source: ErrorSource }) {
     onError: (e) => toast.error(errorMessage(e)),
   })
 
-  const Icon = source.provider === 'posthog' ? Bug : Webhook
+  const Icon = source.provider === 'webhook' ? Webhook : Bug
   const plan = plans?.find((p) => p.id === source.plan_id)
-  const kind = source.provider === 'posthog' ? `PostHog · project ${source.config.project_id ?? '?'}` : 'Webhook'
+  const kind =
+    source.provider === 'posthog'
+      ? `PostHog · project ${source.config.project_id ?? '?'}`
+      : source.provider === 'sentry'
+        ? `Sentry · ${source.config.org ?? '?'}/${source.config.project ?? '?'}`
+        : 'Webhook'
   const status = !source.enabled
     ? 'Switched off'
     : source.last_sync_message

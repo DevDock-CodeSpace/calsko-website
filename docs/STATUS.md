@@ -25,7 +25,7 @@ unless it says otherwise. Conventions live in [CLAUDE.md](../CLAUDE.md); setup i
 | Invite emails: Members → Email invites, a single-use code per address, sent with Resend (`invite-email`) | Branch `feat/invite-emails` |
 | Email notifications: note reminders, new feedback (to support@), meeting invites/changes/cancellations and unread chat (built, flags off); Email settings in the profile menu | Branch `feat/email-notifications` |
 | Feature flags can have sub-features (`feature_flags.parent`, one level; on only while the parent is on); `email` → `email_invites`, `email_reminders`, `email_feedback`, `email_meetings`, `email_chat` | Branch `feat/email-notifications` |
-| Error tracking: PostHog (daily pull) or any webhook → counted issues, AI-written with the exact error below (flags `error_tracking`, `error_tracking_ai`); [ERROR_TRACKING.md](ERROR_TRACKING.md) | Branch `feat/error-tracking`, migrations on Dev |
+| Error tracking: PostHog and Sentry (daily pull) or any webhook → counted issues, AI-written with the exact error below (flags `error_tracking`, `error_tracking_ai`); [ERROR_TRACKING.md](ERROR_TRACKING.md) | Built (Sentry on `feat/error-tracking-sentry`) |
 
 ## Next
 
@@ -35,7 +35,7 @@ unless it says otherwise. Conventions live in [CLAUDE.md](../CLAUDE.md); setup i
   on `public.messages` once every open client uses `edit_message`/`delete_message`.
 - Exercises is still a placeholder page.
 - Issue display options (group by, sub-group, ordering, properties) are not built.
-- Error tracking: more providers (Sentry next, then Rollbar/Bugsnag/Datadog/New Relic, then CloudWatch/Azure/Google), and closing an issue resolving the error in the tracker.
+- Error tracking: more providers (Rollbar/Bugsnag/Datadog/New Relic, then CloudWatch/Azure/Google), and closing an issue resolving the error in the tracker.
 
 ## Known gaps
 
