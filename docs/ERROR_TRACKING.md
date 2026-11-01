@@ -3,6 +3,8 @@
 Errors from an error tracker become issues in a project. The owner chose this design on 2026-11-01.
 
 - A new kind of error gets an issue. AI writes it, and the exact error is copied below what the AI wrote.
+- Every error issue carries two labels: **Error**, and one for where it came from: `posthog-errors` for PostHog, or a webhook's name plus `-errors` ("Sentry alerts" → `sentry-alerts-errors`). Both are made in the project when missing.
+- A source can put its issues into a **plan**, chosen or named when connecting or in **Edit…** (`set_error_source_plan`). Choosing one also moves the source's open issues that have no plan yet, unless that box is unticked.
 - The same error happening again only adds to its count while its issue is open.
 - An error that comes back after its issue was **Done** gets a new issue that links to the old one ("Came back after QB-12").
 - A **Canceled** issue means "won't fix", so its error is only counted.
@@ -40,7 +42,7 @@ Flags:
 **What the functions do**:
 - `error_record(source, reports)` adds counts and flags errors that need an issue: new ones, ones whose issue was deleted, and ones back after Done.
 - `error_create_issue(group, title, description, priority)`:
-  - makes the issue in Backlog, with the source's label or the project's **Error** label (made when missing);
+  - makes the issue in Backlog, in the source's plan (`error_sources.plan_id`), labelled **Error** and with the source's label (`private.error_source_label_name`), both made when missing;
   - sets `devdock.via = 'errors'`, so Activity shows "Error tracking";
   - links the error to the new issue.
 - Only the service role can call them.
@@ -121,7 +123,7 @@ Content-Type: application/json
 ## Tests
 
 - `npm run test:errors` (Deno, no database): fingerprints, the webhook format, PostHog rows and request, the issue template, the AI reply and the description.
-- `psql "<dev or local URL>" -f supabase/tests/error_tracking.sql`: 54 checks covering access, secrets, counting, issues, regressions, Canceled, Sync now and removal. It rolls back.
+- `psql "<dev or local URL>" -f supabase/tests/error_tracking.sql`: 62 checks covering access, secrets, counting, issues, labels, plans, regressions, Canceled, Sync now and removal. It rolls back.
 
 ## Cost
 

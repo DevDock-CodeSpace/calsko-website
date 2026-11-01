@@ -156,7 +156,11 @@ Deno.test('posthog: pull merges days per issue and explains a refused key', asyn
   assertEquals((sent!.headers as Record<string, string>).Authorization, 'Bearer phx_test')
 
   const refused = (async () => new Response('no', { status: 403 })) as unknown as typeof fetch
-  await assertRejects(() => posthogProvider.pull!({ ...context, fetch: refused }), SourceProblem)
+  await assertRejects(() => posthogProvider.pull!({ ...context, fetch: refused }), SourceProblem, 'needs the "Query: Read" scope')
+  // PostHog's own reason is passed on when it gives one.
+  const scoped = (async () =>
+    new Response(JSON.stringify({ type: 'authentication_error', detail: "API key missing required scope 'query:read'" }), { status: 403 })) as unknown as typeof fetch
+  await assertRejects(() => posthogProvider.pull!({ ...context, fetch: scoped }), SourceProblem, "PostHog refused the API key: API key missing required scope 'query:read'")
 })
 
 // ---------------------------------------------------------------- issue text

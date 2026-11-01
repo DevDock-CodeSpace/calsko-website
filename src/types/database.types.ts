@@ -820,6 +820,7 @@ export type Database = {
           last_sync_ok: boolean | null
           last_synced_at: string | null
           name: string
+          plan_id: string | null
           provider: string
           sync_requested_at: string | null
           team_id: string
@@ -837,6 +838,7 @@ export type Database = {
           last_sync_ok?: boolean | null
           last_synced_at?: string | null
           name: string
+          plan_id?: string | null
           provider: string
           sync_requested_at?: string | null
           team_id: string
@@ -854,6 +856,7 @@ export type Database = {
           last_sync_ok?: boolean | null
           last_synced_at?: string | null
           name?: string
+          plan_id?: string | null
           provider?: string
           sync_requested_at?: string | null
           team_id?: string
@@ -874,6 +877,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "issue_labels"
             referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "error_sources_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "error_sources_workspace_fkey"
@@ -3638,6 +3648,14 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      set_error_source_plan: {
+        Args: {
+          p_include_existing?: boolean
+          p_plan_id: string
+          p_source_id: string
+        }
+        Returns: number
       }
       set_issue_labels: {
         Args: { p_issue_id: string; p_label_ids: string[] }
