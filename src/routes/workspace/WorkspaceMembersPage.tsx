@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, useSuspenseQueries } from '@tanstack/react-query'
 import { MoreHorizontal } from 'lucide-react'
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -30,6 +30,7 @@ import {
 } from '@/features/workspaces/api'
 import { AddWorkspaceMembersDialog } from '@/features/workspaces/components/AddWorkspaceMembersDialog'
 import { errorMessage } from '@/lib/errors'
+import { courseEnrollmentPanel } from '@/features/learning/screens'
 
 export function WorkspaceMembersPage() {
   const { user } = useAuth()
@@ -92,13 +93,20 @@ export function WorkspaceMembersPage() {
     onError: (error) => toast.error(errorMessage(error)),
   })
 
+  const isCourse = workspace.type === 'course'
   return (
     <>
+      {isCourse && can.canEdit && (
+        <Suspense fallback={<div className="mb-10 h-40 animate-pulse rounded-lg bg-muted" />}>
+          <courseEnrollmentPanel.Component />
+        </Suspense>
+      )}
       <div className="mb-3 flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold">Members</h2>
+          <h2 className="text-sm font-semibold">{isCourse ? 'Teachers and students' : 'Members'}</h2>
           <p className="text-sm text-muted-foreground">
-            {people.length} {people.length === 1 ? 'person' : 'people'}. Leads manage the workspace; members use it.
+            {people.length} {people.length === 1 ? 'person' : 'people'}.{' '}
+            {isCourse ? 'Leads teach the course; members are its students.' : 'Leads manage the workspace; members use it.'}
             {workspace.access !== 'members' && ` Open to: ${openTo.toLowerCase()}.`}
           </p>
         </div>

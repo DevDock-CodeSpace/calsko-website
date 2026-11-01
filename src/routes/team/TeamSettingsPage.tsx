@@ -23,7 +23,7 @@ import {
 } from '@/features/teams/api'
 import { CollectionsSection } from '@/features/collections/components/CollectionsSection'
 import { useCurrentTeam, useExitTeam } from '@/features/teams/hooks'
-import { defaultWorkspaceType, teamRoleLabel, teamTypes, workspaceTypes } from '@/features/teams/permissions'
+import { defaultWorkspaceType, teamRoleName, teamTypes, workspaceTypes } from '@/features/teams/permissions'
 import { errorMessage } from '@/lib/errors'
 
 export function TeamSettingsPage() {
@@ -31,7 +31,7 @@ export function TeamSettingsPage() {
 
   return (
     <>
-      <PageHeader title="Group settings" description={`${team.name} · your role: ${teamRoleLabel[role]}`} />
+      <PageHeader title="Group settings" description={`${team.name} · your role: ${teamRoleName(role, team.type)}`} />
       <div>
         <GeneralSection key={team.id} />
         <BrandingSection />

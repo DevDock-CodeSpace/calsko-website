@@ -365,6 +365,70 @@ export type Database = {
           },
         ]
       }
+      course_codes: {
+        Row: {
+          code: string
+          created_at: string
+          created_by: string | null
+          id: string
+          kind: string
+          note: string | null
+          revoked_at: string | null
+          team_id: string
+          used_at: string | null
+          used_by: string | null
+          workspace_id: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind?: string
+          note?: string | null
+          revoked_at?: string | null
+          team_id: string
+          used_at?: string | null
+          used_by?: string | null
+          workspace_id: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind?: string
+          note?: string | null
+          revoked_at?: string | null
+          team_id?: string
+          used_at?: string | null
+          used_by?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "course_codes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_codes_used_by_fkey"
+            columns: ["used_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_codes_workspace_fkey"
+            columns: ["workspace_id", "team_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id", "team_id"]
+          },
+        ]
+      }
       diagrams: {
         Row: {
           access: Database["public"]["Enums"]["file_access"]
@@ -3162,6 +3226,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           description: string | null
+          enrollment: string
           id: string
           issue_key: string
           team_id: string
@@ -3175,6 +3240,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          enrollment?: string
           id?: string
           issue_key: string
           team_id: string
@@ -3188,6 +3254,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          enrollment?: string
           id?: string
           issue_key?: string
           team_id?: string
@@ -3329,6 +3396,38 @@ export type Database = {
         Args: { p_description?: string; p_name: string; p_team_id: string }
         Returns: string
       }
+      create_course: {
+        Args: {
+          p_collection_id?: string
+          p_description?: string
+          p_enrollment?: string
+          p_team_id: string
+          p_title: string
+        }
+        Returns: string
+      }
+      create_course_codes: {
+        Args: { p_count?: number; p_note?: string; p_workspace_id: string }
+        Returns: {
+          code: string
+          created_at: string
+          created_by: string | null
+          id: string
+          kind: string
+          note: string | null
+          revoked_at: string | null
+          team_id: string
+          used_at: string | null
+          used_by: string | null
+          workspace_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "course_codes"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       create_direct_conversation: {
         Args: { p_team_id: string; p_user_id: string }
         Returns: string
@@ -3415,6 +3514,7 @@ export type Database = {
         Args: { t: Database["public"]["Tables"]["teams"]["Row"] }
         Returns: string[]
       }
+      enroll_in_course: { Args: { p_workspace_id: string }; Returns: undefined }
       ensure_general_channel: { Args: { p_team_id: string }; Returns: string }
       error_create_issue: {
         Args: {
@@ -3524,6 +3624,8 @@ export type Database = {
         }[]
       }
       join_team: { Args: { invite_code: string }; Returns: string }
+      join_with_code: { Args: { p_code: string }; Returns: Json }
+      learning_overview: { Args: { p_team_id: string }; Returns: Json }
       lesson_doc_ids: { Args: { p_lesson_ids: string[] }; Returns: string[] }
       lesson_whiteboard: { Args: { p_lesson_id: string }; Returns: string }
       live_session_invitees: {
@@ -3584,6 +3686,7 @@ export type Database = {
         Returns: undefined
       }
       request_error_sync: { Args: { p_source_id: string }; Returns: undefined }
+      revoke_course_code: { Args: { p_code_id: string }; Returns: undefined }
       rotate_error_source_token: {
         Args: { p_source_id: string }
         Returns: string
@@ -3648,6 +3751,14 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      set_course_enrollment: {
+        Args: { p_enrollment: string; p_workspace_id: string }
+        Returns: undefined
+      }
+      set_course_teacher: {
+        Args: { p_teacher: boolean; p_user_id: string; p_workspace_id: string }
+        Returns: undefined
       }
       set_error_source_plan: {
         Args: {
@@ -3723,7 +3834,7 @@ export type Database = {
         | "done"
         | "canceled"
       reminder_status: "pending" | "completed" | "cancelled"
-      team_role: "owner" | "admin" | "member"
+      team_role: "owner" | "admin" | "teacher" | "member"
       team_type: "development" | "learning" | "general"
       workspace_access: "members" | "collection" | "group"
       workspace_module:
@@ -3878,7 +3989,7 @@ export const Constants = {
       ],
       plan_status: ["not_started", "in_progress", "paused", "done", "canceled"],
       reminder_status: ["pending", "completed", "cancelled"],
-      team_role: ["owner", "admin", "member"],
+      team_role: ["owner", "admin", "teacher", "member"],
       team_type: ["development", "learning", "general"],
       workspace_access: ["members", "collection", "group"],
       workspace_module: [

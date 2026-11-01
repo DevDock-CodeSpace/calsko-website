@@ -2,7 +2,7 @@ import { Check } from 'lucide-react'
 import type { TeamRole, TeamType } from '../api'
 import type { WorkspaceRole } from '@/features/workspaces/api'
 import { cn } from '@/lib/utils'
-import { defaultWorkspaceType, workspaceTypes } from '../permissions'
+import { defaultWorkspaceType, teamRoleName, workspaceTypes } from '../permissions'
 
 // Plain-language summary of the roles. Keep it in step with the RLS policies
 // (and permissions.ts); it's a guide for people, not the enforcement.
@@ -12,20 +12,23 @@ type Role = { title: string; who: string; can: string[] }
 /** Who typically holds each role, by group type. */
 const typical: Record<TeamType, Record<TeamRole | WorkspaceRole, string>> = {
   learning: {
-    owner: 'Runs the group, usually the instructor',
-    admin: 'Instructors and TAs',
+    owner: 'Runs the academy or school',
+    admin: 'Runs it with the owner',
+    teacher: 'Creates and teaches their own courses',
     member: 'Students',
     lead: 'Teaches or assists in this course',
   },
   development: {
     owner: 'Runs the group',
     admin: 'Team leads and managers',
+    teacher: 'Runs trainings: onboarding, workshops, internal courses',
     member: 'Developers and contributors',
     lead: 'Leads this project',
   },
   general: {
     owner: 'Runs the group',
-    admin: 'Managers, instructors and team leads',
+    admin: 'Managers and team leads',
+    teacher: 'Runs trainings and courses',
     member: 'Everyone else',
     lead: 'Leads this course, project or space',
   },
@@ -40,6 +43,7 @@ export function RoleGuide({ type, myRole }: { type: TeamType; myRole: TeamRole }
   const noun = workspaceTypes[defaultWorkspaceType[type]].noun // course / project / space
   const nouns = `${noun}s`
   const who = typical[type]
+  const trainers = `${teamRoleName('teacher', type).toLowerCase()}s`
 
   const groupRoles: (Role & { id: TeamRole })[] = [
     {
@@ -48,7 +52,7 @@ export function RoleGuide({ type, myRole }: { type: TeamType; myRole: TeamRole }
       who: who.owner,
       can: [
         'Everything an admin can do',
-        'Make people admins or members',
+        `Make people admins, ${trainers} or members`,
         'Remove anyone from the group',
         'Delete the group',
       ],
@@ -58,7 +62,7 @@ export function RoleGuide({ type, myRole }: { type: TeamType; myRole: TeamRole }
       title: 'Admin',
       who: who.admin,
       can: [
-        'Invite people with invite codes, and remove members',
+        `Invite people with invite codes, make members ${trainers}, and remove members and ${trainers}`,
         `Create, edit and delete ${nouns}, and choose who’s in each and who leads it`,
         `Decide who sees each ${noun}: only the people added, everyone in its collection, or the whole group`,
         'Create collections and choose their people',
@@ -68,11 +72,23 @@ export function RoleGuide({ type, myRole }: { type: TeamType; myRole: TeamRole }
       ],
     },
     {
+      id: 'teacher',
+      title: teamRoleName('teacher', type),
+      who: who.teacher,
+      can: [
+        `Create courses and lead them; add the group’s other ${trainers} and admins as co-leads`,
+        'Bring students in with course codes (free, fee waived), add them directly, and choose whether a course is open or invite only',
+        `Build the course in Learning and see their own students’ progress, never other ${trainers}’ courses`,
+        `Otherwise works like a member`,
+      ],
+    },
+    {
       id: 'member',
       title: 'Member',
       who: who.member,
       can: [
         `Sees the ${nouns} they’ve been added to, plus any that are open to the group or to a collection they’re in`,
+        'Enrolls in open courses from Learning, or joins one with a course code',
         'Reads group-wide whiteboards, and creates and edits group-wide docs',
         `What they can do inside a ${noun} depends on their role there (below)`,
         'Can leave the group at any time',
@@ -117,11 +133,11 @@ export function RoleGuide({ type, myRole }: { type: TeamType; myRole: TeamRole }
       </h2>
       <p className="mt-1 text-sm text-muted-foreground">
         {type === 'learning'
-          ? 'A common setup: instructors and TAs are admins, students are members, and each course has one or more leads.'
+          ? 'A common setup: the owner runs the academy, teachers create and teach their own courses, and students enroll course by course.'
           : `Roles in the group decide who manages it; each ${noun} also has leads and members.`}
       </p>
 
-      <div className="mt-4 grid border-y md:grid-cols-3 md:divide-x">
+      <div className="mt-4 grid border-y md:grid-cols-2 md:divide-x xl:grid-cols-4">
         {groupRoles.map((role) => (
           <RoleColumn key={role.id} role={role} isYou={role.id === myRole} />
         ))}

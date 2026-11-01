@@ -15,17 +15,24 @@ import type { TeamRole, TeamType } from './api'
 export function teamPermissions(role: TeamRole) {
   const isOwner = role === 'owner'
   const isAdmin = isOwner || role === 'admin'
+  const isTeacher = role === 'teacher'
   return {
     isOwner,
     isAdmin,
+    isTeacher,
     canManageWorkspaces: isAdmin,
+    /** Teachers create their own courses (create_course) and become their teacher. */
+    canCreateCourses: isAdmin || isTeacher,
     canInvite: isAdmin,
     canEditTeam: isAdmin,
     canDelete: isOwner,
     canChangeRoles: isOwner,
+    /** Admins switch people between member and teacher; only the owner makes admins. */
+    canSetTeachers: isAdmin,
     canLeave: !isOwner,
-    /** Owner removes anyone else; admin removes plain members. */
-    canRemove: (target: TeamRole) => target !== 'owner' && (isOwner || (role === 'admin' && target === 'member')),
+    /** Owner removes anyone else; admin removes members and teachers. */
+    canRemove: (target: TeamRole) =>
+      target !== 'owner' && (isOwner || (role === 'admin' && (target === 'member' || target === 'teacher'))),
   }
 }
 
@@ -44,7 +51,16 @@ export function workspacePermissions(teamRole: TeamRole, workspaceRole: Workspac
   }
 }
 
-export const teamRoleLabel: Record<TeamRole, string> = { owner: 'Owner', admin: 'Admin', member: 'Member' }
+export const teamRoleLabel: Record<TeamRole, string> = { owner: 'Owner', admin: 'Admin', teacher: 'Teacher', member: 'Member' }
+
+/**
+ * A group role's name as people in that group say it: the teacher role is a **Trainer** outside
+ * learning groups (a senior engineer running onboarding isn't a teacher). Display only; the role is
+ * 'teacher' everywhere in code and the database.
+ */
+export function teamRoleName(role: TeamRole, teamType: TeamType): string {
+  return role === 'teacher' && teamType !== 'learning' ? 'Trainer' : teamRoleLabel[role]
+}
 export const workspaceRoleLabel: Record<WorkspaceRole, string> = { lead: 'Lead', member: 'Member' }
 
 export const teamTypes: Record<TeamType, { label: string; hint: string; icon: LucideIcon }> = {

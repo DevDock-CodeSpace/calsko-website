@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { MoreHorizontal } from 'lucide-react'
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { PageHeader } from '@/components/PageHeader'
@@ -14,11 +14,11 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useAuth } from '@/features/auth/hooks'
 import { PersonRow } from '@/components/PersonRow'
-import { removeTeamMember, setTeamRole, teamMembersQuery, type TeamMember } from '@/features/teams/api'
+import { removeTeamMember, setTeamRole, teamMembersQuery, type TeamMember, type TeamRole } from '@/features/teams/api'
 import { InvitesPanel } from '@/features/teams/components/InvitesPanel'
-import { RoleGuide } from '@/features/teams/components/RoleGuide'
+import { roleGuide } from '@/features/teams/screens'
 import { useCurrentTeam } from '@/features/teams/hooks'
-import { teamRoleLabel } from '@/features/teams/permissions'
+import { teamRoleName } from '@/features/teams/permissions'
 import { errorMessage } from '@/lib/errors'
 
 const joinedFormat = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
@@ -38,10 +38,9 @@ export function TeamMembersPage() {
     ])
 
   const changeRole = useMutation({
-    mutationFn: (vars: { userId: string; role: 'admin' | 'member' }) =>
-      setTeamRole(team.id, vars.userId, vars.role),
+    mutationFn: (vars: { userId: string; role: Exclude<TeamRole, 'owner'> }) => setTeamRole(team.id, vars.userId, vars.role),
     onSuccess: (_, vars) => {
-      toast.success(`Role changed to ${teamRoleLabel[vars.role]}`)
+      toast.success(`Role changed to ${teamRoleName(vars.role, team.type)}`)
       return refresh()
     },
     onError: (error) => toast.error(errorMessage(error)),
@@ -67,7 +66,16 @@ export function TeamMembersPage() {
       <ul className="-mt-6 divide-y border-b">
         {members.map((member) => {
           const isYou = member.user_id === user.id
-          const canChangeRole = can.canChangeRoles && !isYou && member.role !== 'owner'
+          // The owner sets any role; admins switch members and teachers.
+          const roleChoices: Exclude<TeamRole, 'owner'>[] =
+            isYou || member.role === 'owner'
+              ? []
+              : can.canChangeRoles
+                ? (['admin', 'teacher', 'member'] as const).filter((r) => r !== member.role)
+                : can.canSetTeachers && (member.role === 'member' || member.role === 'teacher')
+                  ? [member.role === 'member' ? 'teacher' : 'member']
+                  : []
+          const canChangeRole = roleChoices.length > 0
           const canRemove = !isYou && can.canRemove(member.role)
           return (
             <PersonRow
@@ -75,8 +83,8 @@ export function TeamMembersPage() {
               profile={member.profile}
               userId={member.user_id}
               isYou={isYou}
-              role={teamRoleLabel[member.role]}
-              highlight={member.role === 'owner'}
+              role={teamRoleName(member.role, team.type)}
+              highlight={member.role === 'owner' || member.role === 'teacher'}
               meta={`joined ${joinedFormat.format(new Date(member.joined_at))}`}
               actions={
                 (canChangeRole || canRemove) && (
@@ -87,18 +95,11 @@ export function TeamMembersPage() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      {canChangeRole && (
-                        <DropdownMenuItem
-                          onSelect={() =>
-                            changeRole.mutate({
-                              userId: member.user_id,
-                              role: member.role === 'admin' ? 'member' : 'admin',
-                            })
-                          }
-                        >
-                          {member.role === 'admin' ? 'Make member' : 'Make admin'}
+                      {roleChoices.map((next) => (
+                        <DropdownMenuItem key={next} onSelect={() => changeRole.mutate({ userId: member.user_id, role: next })}>
+                          Make {teamRoleName(next, team.type).toLowerCase()}
                         </DropdownMenuItem>
-                      )}
+                      ))}
                       {canChangeRole && canRemove && <DropdownMenuSeparator />}
                       {canRemove && (
                         <DropdownMenuItem variant="destructive" onSelect={() => setRemoving(member)}>
@@ -116,7 +117,9 @@ export function TeamMembersPage() {
 
       {can.canInvite && <InvitesPanel />}
 
-      <RoleGuide type={team.type} myRole={role} />
+      <Suspense fallback={null}>
+        <roleGuide.Component type={team.type} myRole={role} />
+      </Suspense>
 
       <ConfirmDialog
         open={removing !== null}
