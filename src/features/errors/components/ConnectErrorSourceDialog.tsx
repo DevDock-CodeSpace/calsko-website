@@ -7,9 +7,21 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { createPlan, planKeys } from '@/features/plans/api'
+import { issueKeys } from '@/features/issues/api'
+import { useCurrentTeam } from '@/features/teams/hooks'
 import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
-import { createErrorSource, errorKeys, type ErrorProviderId, type ErrorSource, updateErrorSourceConnection } from '../api'
+import {
+  createErrorSource,
+  errorKeys,
+  type ErrorProviderId,
+  type ErrorSource,
+  setErrorSourcePlan,
+  updateErrorSource,
+  updateErrorSourceConnection,
+} from '../api'
+import { NEW_PLAN, NO_PLAN, PlanField } from './PlanField'
 import { WebhookDetails } from './WebhookDetails'
 
 const HOSTS = [
@@ -21,11 +33,11 @@ type Props = {
   workspaceId: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** Editing a PostHog source's connection instead of connecting a new one. */
+  /** Editing a source (name, plan; PostHog also its connection) instead of connecting a new one. */
   editing?: ErrorSource
 }
 
-/** Connect PostHog or a webhook to the project; or change a PostHog source's project, region and key. */
+/** Connect PostHog or a webhook to the project; or edit a source's name and plan (and PostHog's project, region and key). */
 export function ConnectErrorSourceDialog({ workspaceId, open, onOpenChange, editing }: Props) {
   const queryClient = useQueryClient()
   const [provider, setProvider] = useState<ErrorProviderId>(editing?.provider ?? 'posthog')
@@ -34,29 +46,46 @@ export function ConnectErrorSourceDialog({ workspaceId, open, onOpenChange, edit
   const [projectId, setProjectId] = useState(editing?.config.project_id ?? '')
   const [apiKey, setApiKey] = useState('')
   const [made, setMade] = useState<{ id: string; token: string } | null>(null)
+  const { team } = useCurrentTeam()
+  const [plan, setPlan] = useState(editing?.plan_id ?? NO_PLAN)
+  const [newPlanName, setNewPlanName] = useState('')
+  const [includeExisting, setIncludeExisting] = useState(true)
+  const planChanged = plan !== (editing?.plan_id ?? NO_PLAN)
 
   const save = useMutation({
     mutationFn: async () => {
       const config: Record<string, string> = provider === 'posthog' ? { host, project_id: projectId.trim() } : {}
+      let result: { id: string; token: string | null } | null = null
       if (editing) {
-        await updateErrorSourceConnection(editing.id, config, apiKey.trim())
-        return null
+        if (provider === 'posthog') await updateErrorSourceConnection(editing.id, config, apiKey.trim())
+        if (name.trim() && name.trim() !== editing.name) await updateErrorSource(editing.id, { name: name.trim() })
+      } else {
+        result = await createErrorSource({
+          workspaceId,
+          provider,
+          name: name.trim() || (provider === 'posthog' ? 'PostHog' : 'Webhook'),
+          config,
+          apiKey: provider === 'posthog' ? apiKey.trim() : undefined,
+        })
       }
-      return createErrorSource({
-        workspaceId,
-        provider,
-        name: name.trim() || (provider === 'posthog' ? 'PostHog' : 'Webhook'),
-        config,
-        apiKey: provider === 'posthog' ? apiKey.trim() : undefined,
-      })
+      if (planChanged) {
+        const sourceId = editing?.id ?? result!.id
+        const planId = plan === NEW_PLAN ? await createPlan(team.id, newPlanName) : plan === NO_PLAN ? null : plan
+        await setErrorSourcePlan(sourceId, planId, includeExisting)
+      }
+      return result
     },
     onSuccess: async (result) => {
-      await queryClient.invalidateQueries({ queryKey: errorKeys.sources(workspaceId) })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: errorKeys.sources(workspaceId) }),
+        planChanged && queryClient.invalidateQueries({ queryKey: planKeys.all }),
+        planChanged && editing && queryClient.invalidateQueries({ queryKey: issueKeys.all }),
+      ])
       if (result?.token) {
         setMade({ id: result.id, token: result.token })
         return
       }
-      toast.success(editing ? 'Connection updated' : 'PostHog connected. Its errors arrive with the next daily sync, or press Sync now.')
+      toast.success(editing ? 'Saved' : 'PostHog connected. Its errors arrive with the next daily sync, or press Sync now.')
       onOpenChange(false)
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -66,7 +95,9 @@ export function ConnectErrorSourceDialog({ workspaceId, open, onOpenChange, edit
     e.preventDefault()
     save.mutate()
   }
-  const ready = provider === 'webhook' || (/^\d+$/.test(projectId.trim()) && (editing ? true : apiKey.trim().length >= 8))
+  const ready =
+    (provider === 'webhook' || (/^\d+$/.test(projectId.trim()) && (editing ? true : apiKey.trim().length >= 8))) &&
+    (plan !== NEW_PLAN || newPlanName.trim().length > 0)
 
   if (made) {
     return (
@@ -95,7 +126,9 @@ export function ConnectErrorSourceDialog({ workspaceId, open, onOpenChange, edit
             <DialogTitle>{editing ? `Edit ${editing.name}` : 'Connect an error tracker'}</DialogTitle>
             <DialogDescription>
               {editing
-                ? 'Leave the API key empty to keep the one saved.'
+                ? provider === 'posthog'
+                  ? 'Leave the API key empty to keep the one saved.'
+                  : 'The webhook URL and token stay the same.'
                 : 'Once a day Calsko collects its errors. A new kind of error becomes an issue here; the same error again only adds to its count.'}
             </DialogDescription>
           </DialogHeader>
@@ -128,18 +161,16 @@ export function ConnectErrorSourceDialog({ workspaceId, open, onOpenChange, edit
             </div>
           )}
 
-          {!editing && (
-            <div className="space-y-1.5">
-              <Label htmlFor="error-source-name">Name</Label>
-              <Input
-                id="error-source-name"
-                value={name}
-                maxLength={60}
-                placeholder={provider === 'posthog' ? 'PostHog' : 'Sentry alerts'}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-          )}
+          <div className="space-y-1.5">
+            <Label htmlFor="error-source-name">Name</Label>
+            <Input
+              id="error-source-name"
+              value={name}
+              maxLength={60}
+              placeholder={provider === 'posthog' ? 'PostHog' : 'Sentry alerts'}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
 
           {provider === 'posthog' && (
             <>
@@ -187,6 +218,14 @@ export function ConnectErrorSourceDialog({ workspaceId, open, onOpenChange, edit
                 </p>
               </div>
             </>
+          )}
+
+          <PlanField teamId={team.id} value={plan} onChange={setPlan} newName={newPlanName} onNewNameChange={setNewPlanName} />
+          {editing && planChanged && plan !== NO_PLAN && (
+            <label className="-mt-2 flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={includeExisting} onChange={(e) => setIncludeExisting(e.target.checked)} className="accent-brand" />
+              Also add the open issues it already made
+            </label>
           )}
 
           <DialogFooter>

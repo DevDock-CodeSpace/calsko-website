@@ -48,6 +48,18 @@ export async function updateErrorSourceConnection(id: string, config: Record<str
   if (error) throw toDataError('update the connection', error, passMessage(error))
 }
 
+/** The plan new issues go into (null = none); `includeExisting` also moves its open issues without a plan. */
+export async function setErrorSourcePlan(id: string, planId: string | null, includeExisting: boolean): Promise<number> {
+  const { data, error } = await supabase.rpc('set_error_source_plan', {
+    p_source_id: id,
+    // null clears the plan; the generated types don't know the argument may be null.
+    p_plan_id: planId as string,
+    p_include_existing: includeExisting,
+  })
+  if (error) throw toDataError('choose the plan', error)
+  return data
+}
+
 export async function rotateErrorSourceToken(id: string): Promise<string> {
   const { data, error } = await supabase.rpc('rotate_error_source_token', { p_source_id: id })
   if (error) throw toDataError('make a new token', error)
