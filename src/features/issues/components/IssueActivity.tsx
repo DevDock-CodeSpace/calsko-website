@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient, useSuspenseQueries, useSuspenseQuery } from '@tanstack/react-query'
-import { LoaderCircle, MoreHorizontal } from 'lucide-react'
+import { Bug, LoaderCircle, MoreHorizontal } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { PersonAvatar } from '@/components/PersonRow'
@@ -113,18 +113,27 @@ export function IssueActivity({ issue }: { issue: IssueDetail }) {
   )
 }
 
-/** One history line: small avatar, "Priya changed status from Todo to In Progress", time. GitHub for webhook changes. */
+/**
+ * One history line: small avatar, "Priya changed status from Todo to In Progress", time. GitHub for
+ * webhook changes, Error tracking for issues it made.
+ */
 function ActivityItem({ entry, now, text }: { entry: ActivityEntry; now: number; text: ReactNode }) {
   const github = entry.via === 'github'
+  const errors = entry.via === 'errors'
   return (
     <li className="flex items-center gap-2 pl-1 text-xs text-muted-foreground">
       {github ? (
         <GitHubMark className="size-4 shrink-0 text-foreground" />
+      ) : errors ? (
+        <Bug className="size-4 shrink-0 text-foreground" />
       ) : (
         <PersonAvatar profile={entry.actor} className="size-4" />
       )}
       <span className="min-w-0">
-        <span className="font-medium text-foreground">{github ? 'GitHub' : (entry.actor?.display_name ?? 'Someone')}</span> {text}
+        <span className="font-medium text-foreground">
+          {github ? 'GitHub' : errors ? 'Error tracking' : (entry.actor?.display_name ?? 'Someone')}
+        </span>{' '}
+        {text}
       </span>
       <span aria-hidden>·</span>
       <time dateTime={entry.created_at} className="shrink-0">

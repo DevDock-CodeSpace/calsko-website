@@ -411,3 +411,12 @@ verify_jwt = false
 # x-worker-secret header (EMAIL_WORKER_SECRET, also in Vault as email_worker_secret).
 [functions.send-emails]
 verify_jwt = false
+
+# Error tracking's daily run. Called by pg_cron (worker secret) or by a project manager's
+# "Sync now" (their token, checked by public.request_error_sync); the function checks both itself.
+[functions.error-sync]
+verify_jwt = false
+
+# Error trackers push here without a Supabase login; the function checks the source's token.
+[functions.error-intake]
+verify_jwt = false

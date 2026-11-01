@@ -4,6 +4,7 @@ import type { PersonProfile } from '@/features/teams/api'
 import type { CycleEvent, HistoryIssue } from './cycleStats'
 import { requireAffected, toDataError } from '@/lib/errors'
 import { supabase } from '@/lib/supabase'
+import { ISSUE_ERROR_EMBED, toIssueError, type IssueError } from '@/features/errors/embed'
 import type { Database, Json, TablesInsert } from '@/types/database.types'
 import { issueImagePaths, removeIssueImages } from './images'
 
@@ -41,7 +42,8 @@ export type Issue = {
   labelIds: string[]
 }
 /** One issue with its description and creator. */
-export type IssueDetail = Issue & { description: Json | null; creator: PersonProfile }
+/** `error`: the error tracker's error this issue was made for (features/errors), or null. */
+export type IssueDetail = Issue & { description: Json | null; creator: PersonProfile; error: IssueError | null }
 
 /** A Linear-style cycle (sprint). Dates are local calendar dates ("YYYY-MM-DD"). */
 export type IssueCycle = {
@@ -78,8 +80,8 @@ export type IssueActivity = {
   from_value: string | null
   to_value: string | null
   actor_id: string | null
-  /** 'github' when the change came from a GitHub webhook (no actor). */
-  via: 'github' | null
+  /** 'github' when the change came from a GitHub webhook, 'errors' from error tracking (no actor). */
+  via: 'github' | 'errors' | null
   created_at: string
   actor: PersonProfile
 }
@@ -199,14 +201,14 @@ export const issueQuery = (workspaceId: string, number: number) =>
     queryFn: async (): Promise<IssueDetail | null> => {
       const { data, error } = await supabase
         .from('issues')
-        .select(`${ISSUE_COLUMNS}, description, creator:profiles!issues_created_by_fkey(display_name, avatar_url)`)
+        .select(`${ISSUE_COLUMNS}, description, creator:profiles!issues_created_by_fkey(display_name, avatar_url), ${ISSUE_ERROR_EMBED}`)
         .eq('workspace_id', workspaceId)
         .eq('number', number)
         .maybeSingle()
       if (error) throw toDataError('load the issue', error)
       if (!data) return null
-      const { description, creator, ...row } = data
-      return { ...toIssue(row), description, creator }
+      const { description, creator, error: issueError, ...row } = data
+      return { ...toIssue(row), description, creator, error: toIssueError(issueError) }
     },
   })
 
