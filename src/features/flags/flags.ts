@@ -21,6 +21,9 @@ export const FEATURE_FLAGS = [
   'email_feedback',
   'email_meetings',
   'email_chat',
+  // Error tracking and its sub-feature (AI-written issues).
+  'error_tracking',
+  'error_tracking_ai',
 ] as const
 
 export type FeatureFlag = (typeof FEATURE_FLAGS)[number]

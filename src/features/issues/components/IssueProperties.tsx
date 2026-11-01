@@ -237,7 +237,7 @@ export function IssueProperties({
         </Picker>
       </Row>
       <p className="px-2 pt-4 text-xs text-muted-foreground">
-        Created by {issue.creator?.display_name ?? 'a former member'} · {timeAgo(issue.created_at, now)}
+        Created by {issue.creator?.display_name ?? (issue.error ? 'Error tracking' : 'a former member')} · {timeAgo(issue.created_at, now)}
         <br />
         Updated {timeSince(issue.updated_at, now)}
         {issue.completed_at && (

@@ -21,6 +21,7 @@ import { useShortcuts } from '../shortcuts'
 import { IssueActivity } from './IssueActivity'
 import { IssueDescription } from './IssueDescription'
 import { IssueDevelopment } from './IssueDevelopment'
+import { IssueErrorBlock } from '@/features/errors/components/IssueErrorBlock'
 import { IssueProperties } from './IssueProperties'
 import { ShortcutsDialog } from './ShortcutsDialog'
 import { SubIssues } from './SubIssues'
@@ -248,6 +249,7 @@ export default function IssueView({ issue }: { issue: IssueDetail }) {
       <div className="shrink-0 border-t pt-6 lg:w-64 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-4">
         <IssueProperties issue={issue} menu={menu} onMenuChange={setMenu} />
         <IssueDevelopment issue={issue} />
+        {issue.error && <IssueErrorBlock error={issue.error} />}
       </div>
 
       <ShortcutsDialog open={help} onOpenChange={setHelp} />

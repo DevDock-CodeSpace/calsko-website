@@ -696,6 +696,194 @@ export type Database = {
         }
         Relationships: []
       }
+      error_group_days: {
+        Row: {
+          count: number
+          day: string
+          group_id: string
+        }
+        Insert: {
+          count: number
+          day: string
+          group_id: string
+        }
+        Update: {
+          count?: number
+          day?: string
+          group_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "error_group_days_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "error_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      error_groups: {
+        Row: {
+          created_at: string
+          fingerprint: string
+          first_seen: string
+          id: string
+          issue_id: string | null
+          last_seen: string
+          needs_issue: boolean
+          previous_issue_id: string | null
+          raw: string
+          source_id: string
+          team_id: string
+          title: string
+          total_count: number
+          updated_at: string
+          url: string | null
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          fingerprint: string
+          first_seen: string
+          id?: string
+          issue_id?: string | null
+          last_seen: string
+          needs_issue?: boolean
+          previous_issue_id?: string | null
+          raw?: string
+          source_id: string
+          team_id: string
+          title: string
+          total_count?: number
+          updated_at?: string
+          url?: string | null
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          fingerprint?: string
+          first_seen?: string
+          id?: string
+          issue_id?: string | null
+          last_seen?: string
+          needs_issue?: boolean
+          previous_issue_id?: string | null
+          raw?: string
+          source_id?: string
+          team_id?: string
+          title?: string
+          total_count?: number
+          updated_at?: string
+          url?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "error_groups_issue_id_fkey"
+            columns: ["issue_id"]
+            isOneToOne: false
+            referencedRelation: "issues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "error_groups_previous_issue_id_fkey"
+            columns: ["previous_issue_id"]
+            isOneToOne: false
+            referencedRelation: "issues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "error_groups_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "error_sources"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "error_groups_workspace_fkey"
+            columns: ["workspace_id", "team_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id", "team_id"]
+          },
+        ]
+      }
+      error_sources: {
+        Row: {
+          config: Json
+          created_at: string
+          created_by: string | null
+          enabled: boolean
+          id: string
+          label_id: string | null
+          last_sync_message: string | null
+          last_sync_ok: boolean | null
+          last_synced_at: string | null
+          name: string
+          provider: string
+          sync_requested_at: string | null
+          team_id: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          config?: Json
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          id?: string
+          label_id?: string | null
+          last_sync_message?: string | null
+          last_sync_ok?: boolean | null
+          last_synced_at?: string | null
+          name: string
+          provider: string
+          sync_requested_at?: string | null
+          team_id: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          id?: string
+          label_id?: string | null
+          last_sync_message?: string | null
+          last_sync_ok?: boolean | null
+          last_synced_at?: string | null
+          name?: string
+          provider?: string
+          sync_requested_at?: string | null
+          team_id?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "error_sources_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "error_sources_label_fkey"
+            columns: ["label_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "issue_labels"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
+            foreignKeyName: "error_sources_workspace_fkey"
+            columns: ["workspace_id", "team_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id", "team_id"]
+          },
+        ]
+      }
       feature_flags: {
         Row: {
           created_at: string
@@ -3135,6 +3323,16 @@ export type Database = {
         Args: { p_team_id: string; p_user_id: string }
         Returns: string
       }
+      create_error_source: {
+        Args: {
+          p_api_key?: string
+          p_config?: Json
+          p_name: string
+          p_provider: string
+          p_workspace_id: string
+        }
+        Returns: Json
+      }
       create_group_conversation: {
         Args: { p_name: string; p_team_id: string; p_user_ids: string[] }
         Returns: string
@@ -3208,6 +3406,64 @@ export type Database = {
         Returns: string[]
       }
       ensure_general_channel: { Args: { p_team_id: string }; Returns: string }
+      error_create_issue: {
+        Args: {
+          p_description: Json
+          p_group: string
+          p_priority?: number
+          p_title: string
+        }
+        Returns: number
+      }
+      error_finish_sync: {
+        Args: {
+          p_message: string
+          p_ok: boolean
+          p_source: string
+          p_synced_until?: string
+        }
+        Returns: undefined
+      }
+      error_groups_needing_issues: {
+        Args: { p_limit?: number; p_source: string }
+        Returns: {
+          fingerprint: string
+          first_seen: string
+          id: string
+          last_seen: string
+          previous_issue_number: number
+          raw: string
+          title: string
+          total_count: number
+          url: string
+        }[]
+      }
+      error_record: {
+        Args: { p_reports: Json; p_source: string }
+        Returns: Json
+      }
+      error_source_api_key: { Args: { p_source: string }; Returns: string }
+      error_source_for_token: {
+        Args: { p_source: string; p_token: string }
+        Returns: {
+          id: string
+          provider: string
+        }[]
+      }
+      error_sources_due: {
+        Args: { p_source?: string }
+        Returns: {
+          ai: boolean
+          config: Json
+          id: string
+          issue_key: string
+          last_synced_at: string
+          name: string
+          provider: string
+          team_id: string
+          workspace_id: string
+        }[]
+      }
       find_existing_group: {
         Args: { p_team_id: string; p_user_ids: string[] }
         Returns: string
@@ -3317,6 +3573,11 @@ export type Database = {
         Args: { p_ids: string[]; p_module_id: string }
         Returns: undefined
       }
+      request_error_sync: { Args: { p_source_id: string }; Returns: undefined }
+      rotate_error_source_token: {
+        Args: { p_source_id: string }
+        Returns: string
+      }
       save_email_settings: {
         Args: {
           p_chat?: boolean
@@ -3411,6 +3672,10 @@ export type Database = {
           parent_id: string
           unread_count: number
         }[]
+      }
+      update_error_source_connection: {
+        Args: { p_api_key?: string; p_config: Json; p_source_id: string }
+        Returns: undefined
       }
       workspace_people: {
         Args: { p_workspace_id: string }
