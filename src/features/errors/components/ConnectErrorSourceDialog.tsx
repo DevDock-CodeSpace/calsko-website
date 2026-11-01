@@ -121,11 +121,11 @@ export function ConnectErrorSourceDialog({ workspaceId, open, onOpenChange, edit
   if (made) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Webhook ready</DialogTitle>
             <DialogDescription>
-              Point your error tracker’s alerts here (new and returning errors, or batches), not one request per occurrence. Errors are counted as they arrive and become issues in the daily run.
+              Point your tools’ alerts here (new and returning errors, or batches), not one request per occurrence. Errors are counted as they arrive and become issues in the daily run.
             </DialogDescription>
           </DialogHeader>
           <WebhookDetails sourceId={made.id} token={made.token} />
@@ -158,7 +158,7 @@ export function ConnectErrorSourceDialog({ workspaceId, open, onOpenChange, edit
                 [
                   { id: 'posthog', icon: Bug, title: 'PostHog', text: 'Read once a day with an API key.' },
                   { id: 'sentry', icon: Bug, title: 'Sentry', text: 'Read once a day with an auth token.' },
-                  { id: 'webhook', icon: Webhook, title: 'Webhook', text: 'Rollbar, Datadog, your own code… send alerts to a URL.' },
+                  { id: 'webhook', icon: Webhook, title: 'Webhook', text: 'Datadog, New Relic, your own code… send alerts to a URL.' },
                 ] as const
               ).map((option) => (
                 <button

@@ -7,6 +7,7 @@ import { buildQuery, exceptionText, posthogProvider, rowToReport } from './provi
 import { eventText, issueToReport, nextCursor, sentryProvider } from './providers/sentry.ts'
 import { parseCalskoWebhook, rawText } from './providers/webhook.ts'
 import { BadPayload, mergeReports, SourceProblem } from './types.ts'
+import { webhookGuides } from '../../../../src/features/errors/webhookGuides.ts'
 
 const NOW = new Date('2026-11-01T12:00:00Z')
 
@@ -322,4 +323,47 @@ Deno.test('sentry: pull reads the project, pages issues and fills in the latest 
     SourceProblem,
     'Sentry refused the token: Invalid token',
   )
+})
+
+// ---------------------------------------------------------------- Datadog and New Relic guides
+
+Deno.test('guides: the Datadog and New Relic templates, filled in by those tools, are errors Calsko reads', async () => {
+  const guides = webhookGuides('https://x.supabase.co/functions/v1/error-intake?source=s', 'cerr_t')
+  const payload = (id: string) => guides.find((g) => g.id === id)!.blocks.find((b) => /payload/i.test(b.label))!.text
+  const ms = NOW.getTime() - 60_000
+
+  // Datadog substitutes $VARIABLES as text.
+  const datadog = payload('datadog')
+    .replace('$ALERT_TITLE', 'Checkout error rate is high')
+    .replace('$TEXT_ONLY_MSG', 'TypeError: x is undefined at applyCoupon')
+    .replace('$AGGREG_KEY', '9bd4ac313a4d1e8fae2482df7b77628')
+    .replace('$LINK', 'https://app.datadoghq.com/monitors/1234')
+    .replace('$DATE', String(ms))
+    .replace('$TAGS[env]', 'production')
+    .replace('$ALERT_ID', '1234').replace('$ALERT_TRANSITION', 'Triggered').replace('$ALERT_PRIORITY', 'P2').replace('$TAGS', 'env:production,service:checkout')
+  const [dd] = await parseCalskoWebhook(JSON.parse(datadog), NOW)
+  assertEquals(dd.title, 'Checkout error rate is high')
+  assertEquals(dd.fingerprint, 'ext_9bd4ac313a4d1e8fae2482df7b77628')
+  assertEquals(dd.url, 'https://app.datadoghq.com/monitors/1234')
+  assertEquals(dd.lastSeen, new Date(ms).toISOString())
+  assert(dd.raw.includes('Environment: production') && dd.raw.includes('Datadog monitor 1234'))
+
+  // New Relic renders Handlebars; {{json x}} writes a JSON value.
+  const values: Record<string, unknown> = {
+    issueTitle: 'High error rate on checkout-api',
+    'accumulations.conditionName.[0]': 'Error rate > 5%',
+    issuePageUrl: 'https://radar-api.service.newrelic.com/accounts/1/issues/abc',
+    priority: 'CRITICAL',
+    'entitiesData.names': ['checkout-api'],
+  }
+  const newrelic = payload('newrelic')
+    .replace(/\{\{json ([^}]+)\}\}/g, (_, key: string) => JSON.stringify(values[key.trim()]))
+    .replace('{{createdAt}}', String(ms))
+  const [nr] = await parseCalskoWebhook(JSON.parse(newrelic), NOW)
+  assertEquals(nr.title, 'High error rate on checkout-api')
+  assertEquals(nr.fingerprint, 'ext_Error rate > 5%')
+  assert(nr.raw.includes('"entities"') && nr.raw.includes('checkout-api'))
+
+  // The token is in the headers, never in the payload.
+  assert(!datadog.includes('cerr_t') && !newrelic.includes('cerr_t'))
 })

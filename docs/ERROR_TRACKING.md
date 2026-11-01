@@ -1,6 +1,6 @@
 # Error tracking
 
-Errors from an error tracker (PostHog, Sentry, or anything that can send a webhook) become issues in a project. The owner chose this design on 2026-11-01.
+Errors from an error tracker (PostHog, Sentry, Datadog and New Relic through the webhook, or anything else that can send one) become issues in a project. The owner chose this design on 2026-11-01.
 
 - A new kind of error gets an issue. AI writes it, and the exact error is copied below what the AI wrote.
 - Every error issue carries two labels: **Error**, and one for where it came from: `posthog-errors` for PostHog, or a webhook's name plus `-errors` ("Sentry alerts" → `sentry-alerts-errors`). Both are made in the project when missing.
@@ -109,6 +109,15 @@ Content-Type: application/json
 - At most 100 errors and 1 MB per request.
 - Answers: `202 { recorded }`, `400` unreadable, `401` wrong source or token, source switched off, or the group's flag off.
 - Send a tracker's **alerts** (new error, regression, spike) or batches, not one request per occurrence.
+
+## Datadog and New Relic (guides, not adapters)
+
+Both let you write their webhook's body yourself, so they send the format above to a webhook source and need no code of their own (owner's choice, 2026-11-01). The webhook dialog (Webhook URL and setup…) has the steps and a copyable template for each, filled in with the URL (and the token, right after it's made); `src/features/errors/webhookGuides.ts` holds them, and `error-tracking.test.ts` checks that each template, once the tool fills it in, is an error Calsko reads.
+
+- **Datadog:** Integrations → Webhooks, custom headers `{"x-calsko-token": "…"}`, and `{{#is_alert}}@webhook-calsko{{/is_alert}}` in a monitor's message so only alerts are sent. `$AGGREG_KEY` is the fingerprint (one error per monitor and group), `$DATE` the time (ms), the monitor's message the error text.
+- **New Relic:** a Webhook destination with Bearer-token authorization, and a workflow notifying it on **Activated** only. `{{json …}}` writes JSON values; the alert condition's name is the fingerprint (one error per condition), `{{createdAt}}` the time (ms).
+
+Rollbar, Bugsnag, CloudWatch, Azure and Google Cloud are on hold (owner, 2026-11-01).
 
 ## Setup per Supabase project
 
