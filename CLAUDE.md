@@ -46,5 +46,5 @@ Google and Microsoft via Supabase Auth (PKCE), plus one password admin account a
 
 ## Git and more detail
 Default branch `prod`; feature branches, PRs to `dev`. Don't commit before testing in a browser and the owner says so.
-`docs/AI_AGENT.md` (Calsko AI) · `docs/ERROR_TRACKING.md` (error trackers → issues; a new provider is one file) · `docs/REMINDERS.md` (Notes) · `docs/MESSAGING_ARCHITECTURE.md` (Chat) · `docs/ISSUES_HUB_PLAN.md`
+`docs/AI_AGENT.md` (Calsko AI) · `docs/ERROR_TRACKING.md` (error trackers → issues; a new provider is one file) · `docs/LEARNING_PLATFORM.md` (teachers, enrollment, course codes) · `docs/REMINDERS.md` (Notes) · `docs/MESSAGING_ARCHITECTURE.md` (Chat) · `docs/ISSUES_HUB_PLAN.md`
 (Plans, hub) · `docs/DEV_ENVIRONMENT.md` · `docs/STATUS.md` · `README.md` (setup) · `brand/README.md`.

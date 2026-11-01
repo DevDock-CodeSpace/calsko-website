@@ -23,7 +23,7 @@ import { teamCollectionsQuery, teamWorkspacesQuery } from '@/features/workspaces
 import { teamLogoUrl, type Team } from '../api'
 import { useCurrentTeam, useMyTeams } from '../hooks'
 import { startPath } from '../landing'
-import { teamPermissions, teamRoleLabel, teamTypes } from '../permissions'
+import { teamPermissions, teamRoleName, teamTypes } from '../permissions'
 
 /**
  * The group menu. A group with collections opens a second menu listing them: picking one shows that
@@ -124,7 +124,7 @@ export function TeamSwitcher() {
                 <>
                   <GroupIcon team={m.team} className="size-4" fallback={<Icon className="text-muted-foreground" />} />
                   <span className="flex-1 truncate">{m.team.name}</span>
-                  <span className="font-mono text-xs text-muted-foreground">{teamRoleLabel[m.role].toLowerCase()}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{teamRoleName(m.role, m.team.type).toLowerCase()}</span>
                   {current && collections.length === 0 && <Check className="size-4" />}
                 </>
               )

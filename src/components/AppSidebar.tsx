@@ -28,7 +28,7 @@ import { useUnread } from '@/features/messaging/hooks'
 import { UserMenu } from '@/features/auth/components/UserMenu'
 import { TeamSwitcher } from '@/features/teams/components/TeamSwitcher'
 import { useCurrentTeam } from '@/features/teams/hooks'
-import { getTeamNav, hasTeamIssues, isNavActive, teamPath, workspacePath, type NavItem } from '@/features/teams/nav'
+import { getTeamNav, hasTeamIssues, hasTeamLearning, isNavActive, teamPath, workspacePath, type NavItem } from '@/features/teams/nav'
 import { collectionTypeOrder, workspaceTypeOrder, workspaceTypes } from '@/features/teams/permissions'
 import { useCollectionView } from '@/features/collections/hooks'
 import { rememberCollectionView } from '@/features/collections/view'
@@ -49,7 +49,7 @@ const activeIcon = 'data-active:[&_svg]:text-brand'
  * section title ("Courses · 5") links to the full list.
  */
 export function AppSidebar({ sidebarWidth }: { sidebarWidth: SidebarWidth }) {
-  const { team, can } = useCurrentTeam()
+  const { team, role, can } = useCurrentTeam()
   // One collection at a time: the sidebar shows what is in the one being looked at (everything, in a
   // group without collections). Reads the cache entry the shell loaded, so it adds no request.
   const { collection, workspaces } = useCollectionView()
@@ -60,7 +60,11 @@ export function AppSidebar({ sidebarWidth }: { sidebarWidth: SidebarWidth }) {
   const { isStarred, setStarred } = useWorkspaceStars(team.id)
   const visits = useRecentVisits(team.id)
   // Inside a collection its own type and contents decide whether Issues shows, not the group's.
-  const nav = getTeamNav(team.slug, hasTeamIssues(collection?.type ?? team.type, workspaces))
+  const nav = getTeamNav(
+    team.slug,
+    hasTeamIssues(collection?.type ?? team.type, workspaces),
+    hasTeamLearning(collection?.type ?? team.type, workspaces, role),
+  )
   const unreadMessages = useUnread(team.id).total
   // One section per workspace type that has items; the collection's type (else the group's) decides
   // which comes first.

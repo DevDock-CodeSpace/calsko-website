@@ -105,7 +105,7 @@ function StatusSync() {
 
 function TeamBreadcrumb() {
   const { team } = useCurrentTeam()
-  const { tools, members, settings, messages, reminders } = getTeamNav(team.slug, true)
+  const { tools, members, settings, messages, reminders } = getTeamNav(team.slug, true, true)
   const section = useSection([messages, ...tools, reminders, members, settings])
   const item = useItemCrumb()
   return <Crumbs crumbs={[{ label: team.name, to: teamPath(team.slug) }, ...section, ...item]} />

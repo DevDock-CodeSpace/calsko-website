@@ -9,6 +9,7 @@ import { docLoader, filesLoader, filesShouldRevalidate } from '@/features/docs/l
 import { cycleLoader, issueLoader, issuesLoader } from '@/features/issues/loaders'
 import { issueImportLoader, workspaceSettingsLoader } from '@/features/issues/import/loaders'
 import { hubSettingsLoader, hubSprintsLoader, hubViewsLoader, issuesHubLoader, planLoader } from '@/features/issues/hub/loaders'
+import { teamLearningLoader } from '@/features/learning/platformLoaders'
 import { learningLoader, lessonLoader } from '@/features/learning/loaders'
 import { liveSessionLoader } from '@/features/live/loaders'
 import { githubCallbackLoader, githubTabLoader } from '@/features/repos/loaders'
@@ -132,6 +133,8 @@ export const router = createBrowserRouter([
               { path: 'diagrams', element: <DiagramsRedirect /> },
               // Full-bleed: the canvas takes the whole area under the top bar (DiagramView sets its height).
               { path: 'diagrams/:diagramId', loader: diagramLoader, handle: FULL_BLEED, element: <DiagramPage /> },
+              // Learning (learning platform): Teaching, My learning and Browse courses, from one call.
+              { path: 'learning', loader: teamLearningLoader, lazy: async () => ({ Component: (await import('@/routes/team/TeamLearningPage')).TeamLearningPage }) },
               {
                 // The Issues hub (docs/ISSUES_HUB_PLAN.md): My issues, Plans, Sprints, Views. The layout checks the
                 // group has issues; issuesHubLoader starts the group's issues, plans and people. Tabs are lazy.

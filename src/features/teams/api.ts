@@ -94,15 +94,19 @@ export async function createTeam(input: { name: string; slug: string; type: Team
   return data
 }
 
-/** Returns the joined team's id. Already a member → same id, no error. */
-export async function joinTeam(inviteCode: string): Promise<string> {
-  const { data, error } = await supabase.rpc('join_team', { invite_code: inviteCode })
+/**
+ * Joins with any code a person is given: a group invite joins the group; a course code joins the group
+ * and enrolls in that one course (join_with_code). Already in → same result, no error.
+ */
+export async function joinTeam(inviteCode: string): Promise<{ teamId: string; courseId: string | null }> {
+  const { data, error } = await supabase.rpc('join_with_code', { p_code: inviteCode })
   if (error) {
     throw toDataError('join the group', error, {
-      P0001: 'That invite code is invalid, expired, or has no uses left.',
+      P0001: 'That code is invalid, expired, already used, or has no uses left.',
     })
   }
-  return data
+  const result = data as { team_id: string; workspace_id: string | null }
+  return { teamId: result.team_id, courseId: result.workspace_id }
 }
 
 export async function updateTeam(teamId: string, input: { name: string; type: TeamType }) {
