@@ -295,6 +295,35 @@ begin
     v_fail := v_fail || format('the plan can be cleared: got %s', v_out);
   end if;
 
+  -- ------------------------------------------------------------------ per-day totals and lifetime counts (Sentry)
+  perform public.error_record(v_hook, format('[{"fingerprint": "s1", "title": "Sentry one", "days_mode": "set", "total": 50, "days": [{"day": %s, "count": 5}]}]', to_jsonb(current_date))::jsonb);
+  select id into v_group from public.error_groups where source_id = v_hook and fingerprint = 's1';
+  v_checks := v_checks + 1;
+  if (select total_count from public.error_groups where id = v_group) <> 50 then v_fail := v_fail || text 'the lifetime total is kept'; end if;
+  perform public.error_record(v_hook, format('[{"fingerprint": "s1", "title": "Sentry one", "days_mode": "set", "total": 50, "days": [{"day": %s, "count": 5}]}]', to_jsonb(current_date))::jsonb);
+  v_checks := v_checks + 1;
+  if (select total_count from public.error_groups where id = v_group) <> 50 or (select count from public.error_group_days where group_id = v_group and day = current_date) <> 5 then
+    v_fail := v_fail || text 're-reading the same day adds nothing';
+  end if;
+  perform public.error_record(v_hook, format('[{"fingerprint": "s1", "title": "Sentry one", "days_mode": "set", "total": 50, "days": [{"day": %s, "count": 8}]}]', to_jsonb(current_date))::jsonb);
+  v_checks := v_checks + 1;
+  if (select total_count from public.error_groups where id = v_group) <> 53 or (select count from public.error_group_days where group_id = v_group and day = current_date) <> 8 then
+    v_fail := v_fail || format('a day that grew adds only the increase: got %s', (select total_count from public.error_groups where id = v_group));
+  end if;
+  v_checks := v_checks + 1;
+  if private.check_error_source_config('sentry', '{"host": "https://de.sentry.io", "org": " Acme ", "project": "Web-App"}') <> '{"host": "https://de.sentry.io", "org": "acme", "project": "web-app"}'::jsonb
+     or private.error_source_label_name('sentry', 'My Sentry') <> 'sentry-errors' then
+    v_fail := v_fail || text 'Sentry settings are cleaned up and its label is sentry-errors';
+  end if;
+  for r in select * from (values
+    ('a Sentry host outside the list', format($q$select public.create_error_source(%L, 'sentry', 'S', '{"host":"https://evil.test","org":"a","project":"b"}', 'sntryu_aaaaaaaa')::text$q$, v_ws), 'ERR:22023'),
+    ('Sentry without a token', format($q$select public.create_error_source(%L, 'sentry', 'S', '{"org":"a","project":"b"}', null)::text$q$, v_ws), 'ERR:22023')
+  ) as t(label, sql, expected) loop
+    v_out := pg_temp.run_as(v_lead, r.sql);
+    v_checks := v_checks + 1;
+    if v_out <> r.expected then v_fail := v_fail || format('%s: got %s', r.label, v_out); end if;
+  end loop;
+
   -- ------------------------------------------------------------------ the daily list and Sync now
   v_checks := v_checks + 1;
   if (select count(*) from public.error_sources_due() where team_id = v_team) <> 2 then v_fail := v_fail || text 'both sources are due'; end if;

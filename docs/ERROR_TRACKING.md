@@ -1,6 +1,6 @@
 # Error tracking
 
-Errors from an error tracker become issues in a project. The owner chose this design on 2026-11-01.
+Errors from an error tracker (PostHog, Sentry, or anything that can send a webhook) become issues in a project. The owner chose this design on 2026-11-01.
 
 - A new kind of error gets an issue. AI writes it, and the exact error is copied below what the AI wrote.
 - Every error issue carries two labels: **Error**, and one for where it came from: `posthog-errors` for PostHog, or a webhook's name plus `-errors` ("Sentry alerts" → `sentry-alerts-errors`). Both are made in the project when missing.
@@ -39,6 +39,8 @@ Flags:
 - Only the `error_*` functions write it.
 - Everyone who can see the project reads it. The issue page embeds it in `issueQuery`, so it costs no extra request.
 
+**Counting**: a report's days are added (`days_mode: add`, PostHog and webhooks: occurrences since the last report), or, for trackers that report whole days (`days_mode: set`, Sentry), only each day's increase over what Calsko already has is added, so re-reading a day never counts twice. `total`, when a tracker gives one, is the error's lifetime count there; Calsko's total is at least that.
+
 **What the functions do**:
 - `error_record(source, reports)` adds counts and flags errors that need an issue: new ones, ones whose issue was deleted, and ones back after Done.
 - `error_create_issue(group, title, description, priority)`:
@@ -71,6 +73,7 @@ Everything after a provider is shared. A provider only turns what its tool has i
 | Provider | Way in | Fingerprint |
 |---|---|---|
 | `posthog` | Daily pull: HogQL over `$exception` events since the last sync, grouped by `$exception_issue_id` and day | `ph_<PostHog issue id>`, so Calsko's grouping matches PostHog's |
+| `sentry` | Daily pull: the organization issues API (issues with events since the last sync, up to 500, every status), their whole-day counts for 14 days (`days_mode: set`) and lifetime count (`total`), plus the latest event of the 25 most frequent for the exact stack. Personal auth token with `event:read`, `project:read`, `org:read`; US (`sentry.io`) or EU (`de.sentry.io`) | `sentry_<Sentry issue id>` |
 | `webhook` | Push, in Calsko's own format (below) | `ext_<theirs>` when the sender gives one, otherwise ours (`fingerprint.ts`) |
 
 **Our fingerprint** (`fingerprint.ts`) is for tools that don't group errors themselves:

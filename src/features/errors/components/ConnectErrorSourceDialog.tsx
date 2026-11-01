@@ -24,10 +24,18 @@ import {
 import { NEW_PLAN, NO_PLAN, PlanField } from './PlanField'
 import { WebhookDetails } from './WebhookDetails'
 
-const HOSTS = [
-  { value: 'https://us.posthog.com', label: 'US Cloud (us.posthog.com)' },
-  { value: 'https://eu.posthog.com', label: 'EU Cloud (eu.posthog.com)' },
-]
+const HOSTS: Record<'posthog' | 'sentry', { value: string; label: string }[]> = {
+  posthog: [
+    { value: 'https://us.posthog.com', label: 'US Cloud (us.posthog.com)' },
+    { value: 'https://eu.posthog.com', label: 'EU Cloud (eu.posthog.com)' },
+  ],
+  sentry: [
+    { value: 'https://sentry.io', label: 'US (sentry.io)' },
+    { value: 'https://de.sentry.io', label: 'EU (de.sentry.io)' },
+  ],
+}
+
+const LABEL: Record<ErrorProviderId, string> = { posthog: 'PostHog', sentry: 'Sentry', webhook: 'Webhook' }
 
 type Props = {
   workspaceId: string
@@ -42,8 +50,12 @@ export function ConnectErrorSourceDialog({ workspaceId, open, onOpenChange, edit
   const queryClient = useQueryClient()
   const [provider, setProvider] = useState<ErrorProviderId>(editing?.provider ?? 'posthog')
   const [name, setName] = useState(editing?.name ?? '')
-  const [host, setHost] = useState(editing?.config.host ?? HOSTS[0].value)
+  const [chosenHost, setHost] = useState(editing?.config.host ?? '')
   const [projectId, setProjectId] = useState(editing?.config.project_id ?? '')
+  const [org, setOrg] = useState(editing?.config.org ?? '')
+  const [sentryProject, setSentryProject] = useState(editing?.config.project ?? '')
+  const pulled = provider !== 'webhook'
+  const host = (pulled && HOSTS[provider].some((h) => h.value === chosenHost) ? chosenHost : '') || (pulled ? HOSTS[provider][0].value : '')
   const [apiKey, setApiKey] = useState('')
   const [made, setMade] = useState<{ id: string; token: string } | null>(null)
   const { team } = useCurrentTeam()
@@ -54,18 +66,23 @@ export function ConnectErrorSourceDialog({ workspaceId, open, onOpenChange, edit
 
   const save = useMutation({
     mutationFn: async () => {
-      const config: Record<string, string> = provider === 'posthog' ? { host, project_id: projectId.trim() } : {}
+      const config: Record<string, string> =
+        provider === 'posthog'
+          ? { host, project_id: projectId.trim() }
+          : provider === 'sentry'
+            ? { host, org: org.trim(), project: sentryProject.trim() }
+            : {}
       let result: { id: string; token: string | null } | null = null
       if (editing) {
-        if (provider === 'posthog') await updateErrorSourceConnection(editing.id, config, apiKey.trim())
+        if (pulled) await updateErrorSourceConnection(editing.id, config, apiKey.trim())
         if (name.trim() && name.trim() !== editing.name) await updateErrorSource(editing.id, { name: name.trim() })
       } else {
         result = await createErrorSource({
           workspaceId,
           provider,
-          name: name.trim() || (provider === 'posthog' ? 'PostHog' : 'Webhook'),
+          name: name.trim() || LABEL[provider],
           config,
-          apiKey: provider === 'posthog' ? apiKey.trim() : undefined,
+          apiKey: pulled ? apiKey.trim() : undefined,
         })
       }
       if (planChanged) {
@@ -85,7 +102,7 @@ export function ConnectErrorSourceDialog({ workspaceId, open, onOpenChange, edit
         setMade({ id: result.id, token: result.token })
         return
       }
-      toast.success(editing ? 'Saved' : 'PostHog connected. Its errors arrive with the next daily sync, or press Sync now.')
+      toast.success(editing ? 'Saved' : `${LABEL[provider]} connected. Its errors arrive with the next daily sync, or press Sync now.`)
       onOpenChange(false)
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -96,7 +113,9 @@ export function ConnectErrorSourceDialog({ workspaceId, open, onOpenChange, edit
     save.mutate()
   }
   const ready =
-    (provider === 'webhook' || (/^\d+$/.test(projectId.trim()) && (editing ? true : apiKey.trim().length >= 8))) &&
+    (provider === 'webhook' ||
+      ((provider === 'posthog' ? /^\d+$/.test(projectId.trim()) : org.trim() !== '' && sentryProject.trim() !== '') &&
+        (editing ? true : apiKey.trim().length >= 8))) &&
     (plan !== NEW_PLAN || newPlanName.trim().length > 0)
 
   if (made) {
@@ -126,19 +145,20 @@ export function ConnectErrorSourceDialog({ workspaceId, open, onOpenChange, edit
             <DialogTitle>{editing ? `Edit ${editing.name}` : 'Connect an error tracker'}</DialogTitle>
             <DialogDescription>
               {editing
-                ? provider === 'posthog'
-                  ? 'Leave the API key empty to keep the one saved.'
+                ? pulled
+                  ? 'Leave the key empty to keep the one saved.'
                   : 'The webhook URL and token stay the same.'
                 : 'Once a day Calsko collects its errors. A new kind of error becomes an issue here; the same error again only adds to its count.'}
             </DialogDescription>
           </DialogHeader>
 
           {!editing && (
-            <div role="radiogroup" aria-label="Error tracker" className="grid grid-cols-2 gap-2">
+            <div role="radiogroup" aria-label="Error tracker" className="grid gap-2 sm:grid-cols-3">
               {(
                 [
                   { id: 'posthog', icon: Bug, title: 'PostHog', text: 'Read once a day with an API key.' },
-                  { id: 'webhook', icon: Webhook, title: 'Webhook', text: 'Sentry, Rollbar, your own code… send alerts to a URL.' },
+                  { id: 'sentry', icon: Bug, title: 'Sentry', text: 'Read once a day with an auth token.' },
+                  { id: 'webhook', icon: Webhook, title: 'Webhook', text: 'Rollbar, Datadog, your own code… send alerts to a URL.' },
                 ] as const
               ).map((option) => (
                 <button
@@ -167,7 +187,7 @@ export function ConnectErrorSourceDialog({ workspaceId, open, onOpenChange, edit
               id="error-source-name"
               value={name}
               maxLength={60}
-              placeholder={provider === 'posthog' ? 'PostHog' : 'Sentry alerts'}
+              placeholder={provider === 'webhook' ? 'Datadog alerts' : LABEL[provider]}
               onChange={(e) => setName(e.target.value)}
             />
           </div>
@@ -182,7 +202,7 @@ export function ConnectErrorSourceDialog({ workspaceId, open, onOpenChange, edit
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {HOSTS.map((h) => (
+                      {HOSTS.posthog.map((h) => (
                         <SelectItem key={h.value} value={h.value}>
                           {h.label}
                         </SelectItem>
@@ -215,6 +235,59 @@ export function ConnectErrorSourceDialog({ workspaceId, open, onOpenChange, edit
                 />
                 <p className="text-xs text-muted-foreground">
                   In PostHog: your avatar → Settings → Personal API keys → Create, with <strong>Query: Read</strong> for this project. Calsko keeps it encrypted and never shows it again.
+                </p>
+              </div>
+            </>
+          )}
+
+          {provider === 'sentry' && (
+            <>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="error-source-sentry-host">Region</Label>
+                  <Select value={host} onValueChange={(value) => value && setHost(value)}>
+                    <SelectTrigger id="error-source-sentry-host" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {HOSTS.sentry.map((h) => (
+                        <SelectItem key={h.value} value={h.value}>
+                          {h.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="error-source-org">Organization slug</Label>
+                  <Input id="error-source-org" value={org} placeholder="acme" onChange={(e) => setOrg(e.target.value)} className="font-mono" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="error-source-sentry-project">Project slug</Label>
+                  <Input
+                    id="error-source-sentry-project"
+                    value={sentryProject}
+                    placeholder="web-app"
+                    onChange={(e) => setSentryProject(e.target.value)}
+                    className="font-mono"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="error-source-token">Personal auth token</Label>
+                <Input
+                  id="error-source-token"
+                  type="password"
+                  autoComplete="off"
+                  value={apiKey}
+                  placeholder={editing ? 'Saved (leave empty to keep it)' : 'sntryu_…'}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  In Sentry: User settings → Personal Tokens → Create New Token, with <strong>event:read</strong>, <strong>project:read</strong> and{' '}
+                  <strong>org:read</strong>. The slugs are in the project’s address: <span className="font-mono">&lt;org&gt;.sentry.io/projects/&lt;project&gt;/</span>.
+                  Calsko keeps the token encrypted and never shows it again.
                 </p>
               </div>
             </>

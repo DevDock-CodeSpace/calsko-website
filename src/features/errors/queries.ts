@@ -5,14 +5,14 @@ import { supabase } from '@/lib/supabase'
 // What the settings loader needs (it's in the first load through the router), apart from api.ts's
 // mutations, which load with the settings page.
 
-export type ErrorProviderId = 'posthog' | 'webhook'
+export type ErrorProviderId = 'posthog' | 'sentry' | 'webhook'
 
 export type ErrorSource = {
   id: string
   workspace_id: string
   provider: ErrorProviderId
   name: string
-  config: { host?: string; project_id?: string }
+  config: { host?: string; project_id?: string; org?: string; project?: string }
   enabled: boolean
   label_id: string | null
   /** The plan new issues go into. */
