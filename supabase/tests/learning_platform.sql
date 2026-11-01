@@ -53,6 +53,7 @@ declare
   v_code     text;
   v_code2    text;
   v_json     jsonb;
+  v_slug     text;
   r          record;
 begin
   insert into auth.users (id, instance_id, aud, role, email, raw_user_meta_data, last_sign_in_at)
@@ -222,6 +223,71 @@ begin
   v_out := pg_temp.run_as(gen_random_uuid(), format('select public.learning_overview(%L)::text', v_team));
   v_checks := v_checks + 1;
   if v_out <> 'ERR:42501' then v_fail := v_fail || format('someone outside the group gets nothing: got %s', v_out); end if;
+
+  -- ------------------------------------------------------------------ the public catalog
+  v_out := pg_temp.run_as(v_teacher, format('select public.set_course_listing(%L, true, 999, 1500)::text', v_course));
+  v_checks := v_checks + 1;
+  if v_out <> 'ERR:22023' then v_fail := v_fail || format('publishing needs a description: got %s', v_out); end if;
+  update public.workspaces set description = 'HTML, CSS and your first web page, step by step.' where id = v_course;
+  for r in select * from (values
+    ('a student can''t list a course', v_student, format('select public.set_course_listing(%L, true, null, null)::text', v_course), 'ERR:42501'),
+    ('nor another teacher', v_teacher2, format('select public.set_course_listing(%L, true, null, null)::text', v_course), 'ERR:42501'),
+    ('a zero price is refused', v_teacher, format('select public.set_course_listing(%L, false, 0, null)::text', v_course), 'ERR:22023'),
+    ('the teacher publishes it free', v_teacher, format('select public.set_course_listing(%L, true, null, null)::text', v_course), ''),
+    ('a course without lessons can''t be published', v_teacher2, format('select public.set_course_listing(%L, true, 500, null)::text', v_course2), 'ERR:22023')
+  ) as t(label, uid, sql, expected) loop
+    v_out := pg_temp.run_as(r.uid, r.sql);
+    v_checks := v_checks + 1;
+    if v_out <> r.expected then v_fail := v_fail || format('%s: got %s', r.label, v_out); end if;
+  end loop;
+
+  -- Anyone (signed out) reads the catalog and the course's outline, never another course or lesson text.
+  select slug into v_slug from public.teams where id = v_team;
+  perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+  set local role anon;
+  v_json := public.public_catalog(v_slug);
+  v_out := public.public_course(v_slug, v_course2)::text;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  v_checks := v_checks + 1;
+  if jsonb_array_length(v_json -> 'courses') <> 1 or v_json #>> '{courses,0,title}' <> 'Web basics' or (v_json #>> '{courses,0,lessons}')::int <> 2 then
+    v_fail := v_fail || format('the catalog lists the published course: got %s', v_json);
+  end if;
+  v_checks := v_checks + 1;
+  if v_out is not null then v_fail := v_fail || format('a draft course isn''t public: got %s', v_out); end if;
+  v_json := public.public_course(v_slug, v_course);
+  v_checks := v_checks + 1;
+  if v_json #>> '{course,outline,0,lessons,1}' <> 'Two' or v_json::text like '%"body"%' then
+    v_fail := v_fail || format('the course page shows the outline titles only: got %s', v_json -> 'course');
+  end if;
+  v_out := pg_temp.run_as(v_teacher2, format('select (public.public_course(slug, %L) -> ''course'' ->> ''published'') from public.teams where id = %L', v_course2, v_team));
+  v_checks := v_checks + 1;
+  if v_out <> 'false' then v_fail := v_fail || format('its teacher previews a draft: got %s', v_out); end if;
+
+  -- Someone new enrolls in the free course from its page: joins the group and that course.
+  v_out := pg_temp.run_as(v_admin, format('select public.enroll_published_course(%L)', v_course2));
+  v_checks := v_checks + 1;
+  if v_out <> 'ERR:42501' then v_fail := v_fail || format('a draft can''t be joined from the catalog: got %s', v_out); end if;
+  insert into auth.users (id, instance_id, aud, role, email, raw_user_meta_data) values (v_lesson2, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'learn-check-new-' || v_lesson2 || '@example.test', '{}');
+  v_out := pg_temp.run_as(v_lesson2, format('select public.enroll_published_course(%L)', v_course));
+  v_checks := v_checks + 1;
+  if v_out like 'ERR:%' or not exists (select 1 from public.workspace_members where workspace_id = v_course and user_id = v_lesson2)
+     or (select role from public.team_members where team_id = v_team and user_id = v_lesson2) is distinct from 'member' then
+    v_fail := v_fail || format('a free published course is joined from its page: got %s', v_out);
+  end if;
+  v_out := pg_temp.run_as(v_teacher, format('select public.set_course_listing(%L, true, 999, 1500)::text', v_course));
+  v_out := pg_temp.run_as(v_student2, format('select public.enroll_published_course(%L)', v_course));
+  v_checks := v_checks + 1;
+  if v_out <> 'ERR:22023' then v_fail := v_fail || format('a paid course needs a code: got %s', v_out); end if;
+
+  -- The group can keep pricing to its owners and admins.
+  update public.teams set teachers_set_prices = false where id = v_team;
+  v_out := pg_temp.run_as(v_teacher, format('select public.set_course_listing(%L, true, 1999, null)::text', v_course));
+  v_checks := v_checks + 1;
+  if v_out <> 'ERR:42501' then v_fail := v_fail || format('teachers can be kept from pricing: got %s', v_out); end if;
+  v_out := pg_temp.run_as(v_admin, format('select public.set_course_listing(%L, true, 1999, null)::text', v_course));
+  v_checks := v_checks + 1;
+  if v_out <> '' or (select price_inr from public.workspaces where id = v_course) <> 1999 then v_fail := v_fail || format('admins still price it: got %s', v_out); end if;
 
   -- ------------------------------------------------------------------ a teacher made a member again
   v_out := pg_temp.run_as(v_owner, format($q$update public.team_members set role = 'member' where team_id = %L and user_id = %L returning role::text$q$, v_team, v_teacher));

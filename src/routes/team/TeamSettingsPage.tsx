@@ -6,6 +6,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { LogoMark } from '@/components/Logo'
 import { PageHeader } from '@/components/PageHeader'
 import { DangerRow, SettingsSection } from '@/components/SettingsSection'
+import { CatalogSettingsSection } from '@/features/catalog/components/CatalogSettingsSection'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -35,6 +36,7 @@ export function TeamSettingsPage() {
       <div>
         <GeneralSection key={team.id} />
         <BrandingSection />
+        {team.type !== 'development' && <CatalogSettingsSection />}
         {can.canManageWorkspaces && <CollectionsSection />}
         <TeamReposSection />
         {(can.canLeave || can.canDelete) && <DangerSection />}

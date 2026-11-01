@@ -2920,6 +2920,7 @@ export type Database = {
           logo_path: string | null
           name: string
           slug: string
+          teachers_set_prices: boolean
           type: Database["public"]["Enums"]["team_type"]
           updated_at: string
         }
@@ -2930,6 +2931,7 @@ export type Database = {
           logo_path?: string | null
           name: string
           slug: string
+          teachers_set_prices?: boolean
           type?: Database["public"]["Enums"]["team_type"]
           updated_at?: string
         }
@@ -2940,6 +2942,7 @@ export type Database = {
           logo_path?: string | null
           name?: string
           slug?: string
+          teachers_set_prices?: boolean
           type?: Database["public"]["Enums"]["team_type"]
           updated_at?: string
         }
@@ -3229,6 +3232,10 @@ export type Database = {
           enrollment: string
           id: string
           issue_key: string
+          price_inr: number | null
+          price_usd_cents: number | null
+          published: boolean
+          published_at: string | null
           team_id: string
           title: string
           type: Database["public"]["Enums"]["workspace_type"]
@@ -3243,6 +3250,10 @@ export type Database = {
           enrollment?: string
           id?: string
           issue_key: string
+          price_inr?: number | null
+          price_usd_cents?: number | null
+          published?: boolean
+          published_at?: string | null
           team_id: string
           title: string
           type?: Database["public"]["Enums"]["workspace_type"]
@@ -3257,6 +3268,10 @@ export type Database = {
           enrollment?: string
           id?: string
           issue_key?: string
+          price_inr?: number | null
+          price_usd_cents?: number | null
+          published?: boolean
+          published_at?: string | null
           team_id?: string
           title?: string
           type?: Database["public"]["Enums"]["workspace_type"]
@@ -3515,6 +3530,10 @@ export type Database = {
         Returns: string[]
       }
       enroll_in_course: { Args: { p_workspace_id: string }; Returns: undefined }
+      enroll_published_course: {
+        Args: { p_course_id: string }
+        Returns: string
+      }
       ensure_general_channel: { Args: { p_team_id: string }; Returns: string }
       error_create_issue: {
         Args: {
@@ -3673,6 +3692,11 @@ export type Database = {
         }[]
       }
       plan_whiteboard: { Args: { p_plan_id: string }; Returns: string }
+      public_catalog: { Args: { p_team_slug: string }; Returns: Json }
+      public_course: {
+        Args: { p_course_id: string; p_team_slug: string }
+        Returns: Json
+      }
       reorder_issue_pins: {
         Args: { p_ids: string[]; p_team_id: string }
         Returns: undefined
@@ -3754,6 +3778,15 @@ export type Database = {
       }
       set_course_enrollment: {
         Args: { p_enrollment: string; p_workspace_id: string }
+        Returns: undefined
+      }
+      set_course_listing: {
+        Args: {
+          p_price_inr: number
+          p_price_usd_cents: number
+          p_published: boolean
+          p_workspace_id: string
+        }
         Returns: undefined
       }
       set_course_teacher: {

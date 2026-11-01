@@ -23,6 +23,7 @@ import {
   type CourseCode,
   type CourseEnrollment,
 } from '../platformApi'
+import { CourseListing } from './CourseListing'
 
 /**
  * A course's Members tab, for its teachers and the group's admins: how students get in (open or invite
@@ -63,6 +64,8 @@ export function CourseEnrollmentPanel() {
 
   return (
     <div className="mb-10 space-y-8">
+      <CourseListing />
+
       <section aria-labelledby="course-enrollment">
         <h2 id="course-enrollment" className="text-sm font-semibold">
           How students get in

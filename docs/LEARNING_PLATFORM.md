@@ -49,9 +49,24 @@ The role is called **Teacher** in learning groups and **Trainer** elsewhere, for
 - A course's **Members** tab, for its teachers and admins, has How students get in, Teachers and Course codes (`CourseEnrollmentPanel`, lazy).
 - The course **Overview** shows the student's next lesson, or the teacher's shortcuts (`CourseOverviewLearning`, lazy).
 
+## Public catalog (20261102100000_course_catalog)
+
+- **Listing:** a course is a draft or published (`workspaces.published`), with a price in whole rupees (`price_inr`) and in US cents (`price_usd_cents`); empty means free.
+  - The course's teachers set it on its Members tab (Public listing) through `set_course_listing`, unless the group keeps pricing to its owners and admins (`teams.teachers_set_prices`, in Group settings → Course catalog). Owners and admins can always change it.
+  - Publishing needs a description (20+ characters) and at least one lesson.
+- **Public pages** (lazy routes outside the app, no session needed):
+  - `/learn/<group>` lists the published courses (`public_catalog`);
+  - `/learn/<group>/<course>` shows one (`public_course`): description, outline (module and lesson titles only), teachers' names and pictures, price (₹ for visitors whose browser says India, $ otherwise: `visitorCurrency`).
+  - Those functions are security definer, callable by anon, and return only those fields of published courses. A draft is shown only to people who can publish it, as a preview.
+- **Joining:**
+  - free courses: **Enroll free** → sign in (`?enroll=1` resumes) → `enroll_published_course` joins the group and the course;
+  - paid courses: **Payments open soon**, plus a course code box (`join_with_code`; `?code=` survives the sign-in).
+  - Checkout will replace "Payments open soon" by issuing a paid code.
+- `/privacy` describes what a published course makes public.
+
 ## Tests
 
-`psql "<dev or local URL>" -f supabase/tests/learning_platform.sql` runs 41 checks, covering:
+`psql "<dev or local URL>" -f supabase/tests/learning_platform.sql` runs 57 checks, covering:
 - roles;
 - creating courses;
 - co-teachers;
@@ -59,12 +74,12 @@ The role is called **Teacher** in learning groups and **Trainer** elsewhere, for
 - codes (format, single use, joining the group, withdrawing, who reads them);
 - a group invite through the same box;
 - the Learning page's numbers per person;
+- the catalog (who lists, publishing rules, what anon sees, draft previews, free enroll, paid needs a code, the pricing setting);
 - demoting a teacher.
 
 It rolls back. Run `supabase/tests/workspace_access.sql` too after touching access.
 
 ## Next
 
-- A public course catalog: price (₹/$), publish, and a page anyone can open.
 - Checkout, which issues paid codes.
 - Exercises (assignments and submissions).
