@@ -27,10 +27,8 @@ import {
   rotateErrorSourceToken,
   syncErrorSource,
   updateErrorSource,
-  webhookUrl,
 } from '../api'
 import { ConnectErrorSourceDialog } from './ConnectErrorSourceDialog'
-import { CopyField } from './CopyField'
 import { WebhookDetails } from './WebhookDetails'
 
 /**
@@ -146,7 +144,7 @@ function SourceRow({ source }: { source: ErrorSource }) {
           <DropdownMenuItem onSelect={() => setEditing(true)}>Edit…</DropdownMenuItem>
           {source.provider === 'webhook' && (
             <>
-              <DropdownMenuItem onSelect={() => setWebhook({ token: null })}>Show webhook URL</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setWebhook({ token: null })}>Webhook URL and setup…</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => rotate.mutate()}>New token…</DropdownMenuItem>
             </>
           )}
@@ -161,16 +159,16 @@ function SourceRow({ source }: { source: ErrorSource }) {
       {editing && <ConnectErrorSourceDialog workspaceId={source.workspace_id} open onOpenChange={setEditing} editing={source} />}
       {webhook && (
         <Dialog open onOpenChange={(open) => !open && setWebhook(null)}>
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="sm:max-w-xl">
             <DialogHeader>
               <DialogTitle>{webhook.token ? 'New token' : source.name}</DialogTitle>
               <DialogDescription>
                 {webhook.token
                   ? 'The old token stopped working. Update it wherever errors are sent from.'
-                  : 'The token was shown once, when the webhook was made. Make a new one from the menu if it is lost.'}
+                  : 'Where errors are sent, and how to set it up in your tools.'}
               </DialogDescription>
             </DialogHeader>
-            {webhook.token ? <WebhookDetails sourceId={source.id} token={webhook.token} /> : <CopyField label="Webhook URL" value={webhookUrl(source.id)} />}
+            <WebhookDetails sourceId={source.id} token={webhook.token} />
             <DialogFooter>
               <Button onClick={() => setWebhook(null)}>Done</Button>
             </DialogFooter>
