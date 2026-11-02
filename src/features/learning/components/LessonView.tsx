@@ -149,7 +149,7 @@ export default function LessonView({ lesson }: { lesson: Lesson }) {
       onPointerEnter={onIntent}
       onFocus={onIntent}
       className={cn(
-        '-mb-px inline-flex max-w-48 shrink-0 items-center gap-1.5 border-b-2 pb-2 text-sm transition-colors',
+        'inline-flex max-w-48 shrink-0 items-center gap-1.5 border-b-2 pb-2 text-sm transition-colors',
         active ? 'border-brand font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
       )}
     >
@@ -209,7 +209,7 @@ export default function LessonView({ lesson }: { lesson: Lesson }) {
       )}
 
       <div className="mb-6 flex items-end gap-4 border-b">
-        <div role="tablist" aria-label="Lesson files" className="flex min-w-0 gap-4 overflow-x-auto">
+        <div role="tablist" aria-label="Lesson files" className="-mb-px flex min-w-0 gap-4 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {tabButton('lesson', tab.kind === 'lesson', 'Lesson', () => open({ kind: 'lesson' }))}
           {tabButton('whiteboard', tab.kind === 'whiteboard', 'Whiteboard', () => open({ kind: 'whiteboard' }), () => prefetchBoard(lesson.whiteboard_id))}
           {lesson.files.map((file) =>
