@@ -144,10 +144,10 @@ function Empty({ children }: { children: React.ReactNode }) {
 function Teachers({ people }: { people: PersonChip[] }) {
   if (people.length === 0) return null
   return (
-    <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-      <span className="flex -space-x-1">
+    <span className="flex max-w-72 min-w-0 items-center gap-1.5">
+      <span className="flex shrink-0 -space-x-1">
         {people.slice(0, 3).map((p) => (
-          <PersonAvatar key={p.id} profile={{ display_name: p.name, avatar_url: p.avatar_url }} userId={p.id} className="size-4 ring-1 ring-background" />
+          <PersonAvatar key={p.id} profile={{ display_name: p.name, avatar_url: p.avatar_url }} className="size-4 ring-1 ring-background" />
         ))}
       </span>
       <span className="truncate">{people.map((p) => p.name ?? 'Teacher').join(', ')}</span>
@@ -163,9 +163,9 @@ function TeachingRow({ course, now }: { course: TeachingCourse; now: number }) {
     </span>
   )
   return (
-    <li className="flex flex-col gap-3 py-3 lg:flex-row lg:items-center lg:gap-6">
-      <div className="min-w-0 flex-1 space-y-1">
-        <Link to={learningPath(team.slug, course.id)} className="flex items-center gap-2 font-medium hover:underline">
+    <li className="flex flex-col gap-2 py-3 lg:flex-row lg:items-center lg:gap-6">
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <Link to={learningPath(team.slug, course.id)} className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium hover:underline">
           <BookOpen className="size-4 shrink-0 text-muted-foreground" />
           <span className="truncate">{course.title}</span>
           <span className="shrink-0 rounded border px-1.5 text-[11px] font-normal text-muted-foreground">
@@ -181,19 +181,23 @@ function TeachingRow({ course, now }: { course: TeachingCourse; now: number }) {
           </span>
           {!course.mine && <span className="shrink-0 text-[11px] font-normal text-muted-foreground">not yours</span>}
         </Link>
-        <Teachers people={course.teachers} />
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <Teachers people={course.teachers} />
+          {stat(course.students, course.students === 1 ? 'student' : 'students')}
+          {course.students > 0 && (
+            <>
+              <span>
+                <span className="font-mono">{course.avg_percent}%</span> average
+              </span>
+              {stat(course.not_started, 'not started', 'warn')}
+              {stat(course.stalled, 'stuck 7+ days', 'warn')}
+            </>
+          )}
+          {stat(course.lessons, course.lessons === 1 ? 'lesson' : 'lessons')}
+          {course.last_activity && <span>active {timeAgo(course.last_activity, now)}</span>}
+        </div>
       </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        {stat(course.students, course.students === 1 ? 'student' : 'students')}
-        <span>
-          <span className="font-mono">{course.avg_percent}%</span> average
-        </span>
-        {stat(course.not_started, 'not started', 'warn')}
-        {stat(course.stalled, 'stuck 7+ days', 'warn')}
-        {stat(course.lessons, course.lessons === 1 ? 'lesson' : 'lessons')}
-        {course.last_activity && <span>active {timeAgo(course.last_activity, now)}</span>}
-      </div>
-      <div className="flex shrink-0 gap-1">
+      <div className="-ml-2.5 flex shrink-0 gap-1 lg:ml-0">
         <Button asChild size="sm" variant="ghost">
           <Link to={learningProgressPath(team.slug, course.id)}>Class progress</Link>
         </Button>
