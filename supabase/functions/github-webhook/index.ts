@@ -181,10 +181,14 @@ async function onInstallation(admin: SupabaseClient, payload: Record<string, unk
   return { disconnected: id }
 }
 
+/** An ilike pattern matching exactly this text, ignoring case ("_" is common in repo names). */
+const likeExact = (text: string) => text.replace(/[\\%_]/g, (c) => `\\${c}`)
+
 async function onInstallationRepositories(admin: SupabaseClient, payload: Record<string, unknown>) {
   const id = (payload.installation as { id?: number } | undefined)?.id
   if (!id) return { ignored: true }
-  const ids = (key: string) => ((payload[key] as { id: number }[] | undefined) ?? []).map((r) => r.id)
+  const repos = (key: string) => (payload[key] as { id: number; full_name?: string }[] | undefined) ?? []
+  const ids = (key: string) => repos(key).map((r) => r.id)
   const removed = ids('repositories_removed')
   const added = ids('repositories_added')
   if (removed.length) {
@@ -202,6 +206,19 @@ async function onInstallationRepositories(admin: SupabaseClient, payload: Record
         .eq('team_id', team_id)
         .in('github_repo_id', added)
       if (updateError) throw updateError
+      // Repos typed in by name before GitHub could see them get their GitHub id now.
+      for (const repo of repos('repositories_added')) {
+        const [owner, name] = (repo.full_name ?? '').split('/')
+        if (!owner || !name) continue
+        const { error: nameError } = await admin
+          .from('repos')
+          .update({ github_repo_id: repo.id, installation_id: id })
+          .eq('team_id', team_id)
+          .is('github_repo_id', null)
+          .ilike('owner', likeExact(owner))
+          .ilike('name', likeExact(name))
+        if (nameError) throw nameError
+      }
     }
   }
   return { added: added.length, removed: removed.length }

@@ -43,6 +43,9 @@ Server secrets (JaaS, GitHub App, Gemini) are Edge Function secrets: `supabase s
 1. GitHub → Developer settings → GitHub Apps → New. Callback URL `<origin>/github/callback`; tick "Request user authorization
    during installation"; webhook URL `https://<project-ref>.supabase.co/functions/v1/github-webhook` with a secret; subscribe to
    **Pull request**; permissions Contents read/write, Pull requests read-only.
+   Connect GitHub starts with GitHub sign-in for the App (it returns to the Callback URL, the first one if there are
+   several), then offers the accounts that already have the App, or goes on to install it. The install page alone never
+   comes back when the App is already on the account.
 2. Note the App ID and Client ID, generate a client secret and a private key, convert the key:
    `openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in key.pem -out key-pkcs8.pem`.
 3. `supabase secrets set GITHUB_APP_ID=… GITHUB_CLIENT_ID=… GITHUB_CLIENT_SECRET=… GITHUB_WEBHOOK_SECRET=…` and
