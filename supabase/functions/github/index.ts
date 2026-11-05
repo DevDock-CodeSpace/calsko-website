@@ -2,13 +2,18 @@
 // OAuth client secret never leave this function.
 //
 // POST { action, … } with the user's Supabase access token:
-//   connect  { state, code, installationId } → { teamSlug, account }
-//     After a group owner/admin installs the App, GitHub sends them back with
-//     a one-time OAuth code. We check the state (from start_github_connect:
-//     same person, ≤ 30 min old, used once), that they're still an owner/admin,
-//     and, with their GitHub token, that they can really access that
-//     installation (so nobody can attach someone else's installation id).
-//     Then the installation is saved and existing repos are matched to GitHub.
+//   start    { teamId } → { state, authorizeUrl }
+//     A one-time state (start_github_connect: owners/admins, 30 min, this
+//     person) and GitHub's sign-in URL. Sign-in always comes back to
+//     /github/callback, unlike the install page, which stays on GitHub when the
+//     App is already installed on the account.
+//   connect  { state, code?, installationId? } → connected | choose | install
+//     Back from GitHub. A new install brings code + installationId; sign-in
+//     brings code only, and we answer with the installations that person can
+//     reach and the group lacks (kept on the state), to pick one with
+//     { state, installationId }, or `install` when there are none. Every
+//     installation is verified with the person's own GitHub token, so nobody
+//     can attach someone else's. Saving it also matches existing repos.
 //   repos    { teamId } → { repos: [{ githubRepoId, owner, name, private }] }
 //     Repos the group's installations can reach (owners/admins only).
 //   add_repo { teamId, githubRepoId } → { repo }
@@ -45,6 +50,9 @@ const corsHeaders = {
 }
 
 const STATE_MAX_AGE_MS = 30 * 60_000
+// Overridable only so a local test can stand in for GitHub; never set in a deployed project.
+const GITHUB_API = Deno.env.get('GITHUB_API_URL') ?? 'https://api.github.com'
+const GITHUB_WEB = Deno.env.get('GITHUB_WEB_URL') ?? 'https://github.com'
 const REPO_COLUMNS = 'id, team_id, owner, name, created_at, github_repo_id, installation_id'
 
 type GitHubRepo = { id: number; name: string; private: boolean; owner: { login: string } }
@@ -72,7 +80,7 @@ const isId = (v: unknown): v is number => typeof v === 'number' && Number.isSafe
 // ------------------------------------------------------------------ GitHub
 
 async function github<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`https://api.github.com${path}`, {
+  const res = await fetch(`${GITHUB_API}${path}`, {
     ...init,
     headers: {
       Accept: 'application/vnd.github+json',
@@ -140,7 +148,7 @@ async function installationRepos(token: string): Promise<GitHubRepo[]> {
 
 /** Exchanges the one-time OAuth code from the install redirect for the person's GitHub token. */
 async function userToken(config: AppConfig, code: string) {
-  const res = await fetch('https://github.com/login/oauth/access_token', {
+  const res = await fetch(`${GITHUB_WEB}/login/oauth/access_token`, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'Calsko' },
     body: JSON.stringify({ client_id: config.clientId, client_secret: config.clientSecret, code }),
@@ -220,33 +228,28 @@ async function upsertRepo(admin: SupabaseClient, teamId: string, installationId:
 
 // ----------------------------------------------------------------- actions
 
-async function connect(admin: SupabaseClient, config: AppConfig, userId: string, body: Record<string, unknown>) {
-  const { state, code, installationId } = body
-  if (!isUuid(state) || typeof code !== 'string' || !code || !isId(installationId)) throw new HttpError(400, 'bad_request')
+type Installation = { id: number; login: string; type: 'User' | 'Organization' }
 
-  // One use only, whatever happens next.
-  const { data: saved, error } = await admin
-    .from('github_connect_states')
-    .delete()
-    .eq('state', state)
-    .select('team_id, user_id, created_at')
-    .maybeSingle()
-  if (error) throw new HttpError(500, 'server_error')
-  if (!saved || saved.user_id !== userId || Date.now() - Date.parse(saved.created_at) > STATE_MAX_AGE_MS) {
-    throw new HttpError(400, 'state_invalid')
-  }
-  const teamId: string = saved.team_id
-  await requireAdmin(admin, teamId, userId)
+const toInstallation = (i: GitHubInstallation): Installation | null =>
+  i.account ? { id: i.id, login: i.account.login, type: i.account.type === 'Organization' ? 'Organization' : 'User' } : null
 
-  const installation = (await userInstallations(await userToken(config, code))).find((i) => i.id === installationId)
-  if (!installation?.account) throw new HttpError(403, 'installation_denied')
-  const accountType = installation.account.type === 'Organization' ? 'Organization' : 'User'
+/** The choices kept on a state (written by `connect`, but read back defensively). */
+function savedInstallations(value: unknown): Installation[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((v) =>
+    v && typeof v === 'object' && isId(v.id) && typeof v.login === 'string' && (v.type === 'User' || v.type === 'Organization')
+      ? [{ id: v.id, login: v.login, type: v.type }]
+      : [],
+  )
+}
 
+/** Saves a verified installation for the group, then connects the repos it already has. */
+async function saveInstallation(admin: SupabaseClient, config: AppConfig, teamId: string, userId: string, inst: Installation) {
   const { error: saveError } = await admin.from('github_installations').upsert({
     team_id: teamId,
-    installation_id: installationId,
-    account_login: installation.account.login,
-    account_type: accountType,
+    installation_id: inst.id,
+    account_login: inst.login,
+    account_type: inst.type,
     connected_by: userId,
   })
   if (saveError) {
@@ -263,13 +266,90 @@ async function connect(admin: SupabaseClient, config: AppConfig, userId: string,
         row.github_repo_id === r.id ||
         (row.owner.toLowerCase() === r.owner.login.toLowerCase() && row.name.toLowerCase() === r.name.toLowerCase()),
     )
-  const reachable = await installationRepos(await installationToken(config, installationId))
+  const reachable = await installationRepos(await installationToken(config, inst.id))
   for (const repo of reachable.filter(known)) {
-    await upsertRepo(admin, teamId, installationId, repo).catch((e) => console.error('[github] matching repo failed', e))
+    await upsertRepo(admin, teamId, inst.id, repo).catch((e) => console.error('[github] matching repo failed', e))
+  }
+}
+
+/** A state for connecting the group, and where to send the person: GitHub sign-in, which always comes back. */
+async function start(asUser: SupabaseClient, config: AppConfig, body: Record<string, unknown>) {
+  const { teamId } = body
+  if (!isUuid(teamId)) throw new HttpError(400, 'bad_request')
+  const { data: state, error } = await asUser.rpc('start_github_connect', { p_team_id: teamId })
+  if (error) {
+    if (error.code === '42501') throw new HttpError(403, 'forbidden')
+    console.error('[github] start_github_connect failed', error)
+    throw new HttpError(500, 'server_error')
+  }
+  const authorizeUrl = `${GITHUB_WEB}/login/oauth/authorize?client_id=${encodeURIComponent(config.clientId)}&state=${state}`
+  return { state: state as string, authorizeUrl }
+}
+
+/**
+ * Back from GitHub with the state from `start`, in one of three ways:
+ *  - { code, installationId }: a new install (GitHub signs them in on the way back);
+ *  - { code }: GitHub sign-in only. Returns the installations they can reach that the group
+ *    doesn't have yet, kept on the state: `choose` one, or `install` when there are none;
+ *  - { installationId }: their pick from that list.
+ * The state stays valid (same person, 30 minutes) until a connection is made.
+ */
+async function connect(admin: SupabaseClient, config: AppConfig, userId: string, body: Record<string, unknown>) {
+  const { state, code, installationId } = body
+  const hasCode = code !== undefined && code !== null
+  const hasId = installationId !== undefined && installationId !== null
+  if (!isUuid(state) || (hasCode && (typeof code !== 'string' || !code)) || (hasId && !isId(installationId)) || (!hasCode && !hasId)) {
+    throw new HttpError(400, 'bad_request')
   }
 
+  const { data: saved, error } = await admin
+    .from('github_connect_states')
+    .select('team_id, user_id, created_at, installations')
+    .eq('state', state)
+    .maybeSingle()
+  if (error) throw new HttpError(500, 'server_error')
+  if (!saved || saved.user_id !== userId || Date.now() - Date.parse(saved.created_at) > STATE_MAX_AGE_MS) {
+    throw new HttpError(400, 'state_invalid')
+  }
+  const teamId: string = saved.team_id
+  await requireAdmin(admin, teamId, userId)
   const { data: team } = await admin.from('teams').select('slug').eq('id', teamId).single()
-  return { teamSlug: team?.slug as string, account: installation.account.login }
+  const teamSlug = team?.slug as string
+
+  const finish = async (inst: Installation) => {
+    await saveInstallation(admin, config, teamId, userId, inst)
+    await admin.from('github_connect_states').delete().eq('state', state)
+    return { kind: 'connected' as const, teamSlug, account: inst.login }
+  }
+
+  // A pick: only from the list this person's own GitHub token produced.
+  if (!hasCode) {
+    const inst = savedInstallations(saved.installations).find((i) => i.id === installationId)
+    if (!inst) throw new HttpError(403, 'installation_denied')
+    return finish(inst)
+  }
+
+  const reachable = (await userInstallations(await userToken(config, code as string))).flatMap((i) => toInstallation(i) ?? [])
+  if (hasId) {
+    // Verified with their token, so nobody can attach someone else's installation id.
+    const inst = reachable.find((i) => i.id === installationId)
+    if (!inst) throw new HttpError(403, 'installation_denied')
+    return finish(inst)
+  }
+
+  const connectedIds = await teamInstallationIds(admin, teamId)
+  const choices = reachable.filter((i) => !connectedIds.includes(i.id))
+  const { error: keepError } = await admin.from('github_connect_states').update({ installations: choices }).eq('state', state)
+  if (keepError) {
+    console.error('[github] saving choices failed', keepError)
+    throw new HttpError(500, 'server_error')
+  }
+  return {
+    kind: choices.length > 0 ? ('choose' as const) : ('install' as const),
+    teamSlug,
+    accounts: choices.map((i) => ({ installationId: i.id, account: i.login, type: i.type })),
+    connected: reachable.filter((i) => connectedIds.includes(i.id)).map((i) => i.login),
+  }
 }
 
 async function listRepos(admin: SupabaseClient, config: AppConfig, userId: string, body: Record<string, unknown>) {
@@ -376,13 +456,13 @@ async function createBranch(
     'X-GitHub-Api-Version': '2022-11-28',
     'User-Agent': 'Calsko',
   }
-  const baseRef = await fetch(`https://api.github.com/repos/${fullName}/git/ref/heads/${refPath(base)}`, { headers })
+  const baseRef = await fetch(`${GITHUB_API}/repos/${fullName}/git/ref/heads/${refPath(base)}`, { headers })
   if (baseRef.status === 404) throw new HttpError(409, 'base_missing')
   if (!baseRef.ok) throw new HttpError(502, 'github_error')
   const baseSha = ((await baseRef.json()) as { object: { sha: string } }).object.sha
 
   let sha = baseSha
-  const created = await fetch(`https://api.github.com/repos/${fullName}/git/refs`, {
+  const created = await fetch(`${GITHUB_API}/repos/${fullName}/git/refs`, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ ref: `refs/heads/${name}`, sha: baseSha }),
@@ -469,6 +549,8 @@ Deno.serve(async (req) => {
 
   try {
     switch (body.action) {
+      case 'start':
+        return json(await start(asUser, config, body))
       case 'connect':
         return json(await connect(admin, config, userId, body))
       case 'repos':

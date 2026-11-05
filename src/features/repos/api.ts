@@ -236,17 +236,62 @@ export async function callGitHub<T>(action: string, body: Record<string, unknown
   return data
 }
 
-/** Sends a group owner/admin to GitHub to install the App; GitHub returns them to /github/callback. */
+/** Set in the tab `startGitHubConnect` opens, so /github/callback knows it can say "close this tab". */
+export const GITHUB_CONNECT_TAB_KEY = 'devdock:githubConnectTab'
+/** /github/callback tells the group's other tabs that an install was connected. */
+export const GITHUB_CONNECT_CHANNEL = 'devdock:github'
+
+/** GitHub's page for installing the App on an account, carrying the connect state back. */
+export const githubInstallUrl = (state: string) =>
+  `https://github.com/apps/${githubAppSlug}/installations/new?state=${encodeURIComponent(state)}`
+
+/**
+ * Sends a group owner/admin to GitHub in a new tab, so Calsko stays open. It starts with GitHub
+ * sign-in, which always returns to /github/callback; the install page alone stays on GitHub when
+ * the App is already installed on the account, and the group never got connected.
+ */
 export async function startGitHubConnect(teamId: string) {
   if (!githubAppSlug) throw new DataError(githubErrors.not_configured, 'not_configured')
-  const { data: state, error } = await supabase.rpc('start_github_connect', { p_team_id: teamId })
-  if (error) throw toDataError('start connecting GitHub', error, { '42501': githubErrors.forbidden })
-  window.location.assign(`https://github.com/apps/${githubAppSlug}/installations/new?state=${encodeURIComponent(state)}`)
+  // Opened before the request, while the click still counts (pop-up blockers). Same origin and
+  // with an opener, so it gets a copy of this tab's sessionStorage, and with it the session.
+  const tab = window.open('', '_blank')
+  let authorizeUrl: string
+  try {
+    ;({ authorizeUrl } = await callGitHub<{ state: string; authorizeUrl: string }>('start', { teamId }))
+  } catch (error) {
+    tab?.close()
+    throw error
+  }
+  if (!tab) return window.location.assign(authorizeUrl) // pop-ups blocked: this tab goes instead
+  tab.sessionStorage.setItem(GITHUB_CONNECT_TAB_KEY, '1')
+  tab.opener = null
+  tab.location.assign(authorizeUrl)
 }
 
-/** Finishes the install round trip (the Edge Function verifies it with GitHub). */
-export const connectGitHub = (input: { state: string; code: string; installationId: number }) =>
-  callGitHub<{ teamSlug: string; account: string }>('connect', input)
+export type GitHubAccountChoice = { installationId: number; account: string; type: 'User' | 'Organization' }
+
+export type GitHubConnectResult =
+  | { kind: 'connected'; teamSlug: string; account: string }
+  /** Installations the person can reach that the group lacks (none: `install`), and the accounts it already has. */
+  | { kind: 'choose'; teamSlug: string; accounts: GitHubAccountChoice[]; connected: string[] }
+  | { kind: 'install'; teamSlug: string; accounts: []; connected: string[] }
+
+/**
+ * Back from GitHub (the Edge Function verifies everything with GitHub): `code` from sign-in,
+ * plus `installationId` after a new install; `installationId` alone is a pick from `choose`.
+ */
+export const connectGitHub = (input: { state: string; code?: string; installationId?: number }) =>
+  callGitHub<GitHubConnectResult>('connect', input)
+
+/** Tells the group's other tabs to refetch. True in the tab `startGitHubConnect` opened, which can be closed. */
+export function announceGitHubConnected() {
+  const channel = new BroadcastChannel(GITHUB_CONNECT_CHANNEL)
+  channel.postMessage('connected')
+  channel.close()
+  const opened = sessionStorage.getItem(GITHUB_CONNECT_TAB_KEY) !== null
+  sessionStorage.removeItem(GITHUB_CONNECT_TAB_KEY)
+  return opened
+}
 
 /** Repos the group's installations can reach, for owners/admins to add. */
 export const githubReposQuery = (teamId: string) =>
@@ -254,6 +299,8 @@ export const githubReposQuery = (teamId: string) =>
     queryKey: repoKeys.github(teamId),
     queryFn: async () => (await callGitHub<{ repos: GitHubRepo[] }>('repos', { teamId })).repos,
     staleTime: 30_000,
+    // Asked again on coming back from GitHub (repo access is granted in another tab), however recent.
+    refetchOnWindowFocus: 'always',
   })
 
 /** Adds a GitHub repo to the group (or connects the one added earlier by name). */
