@@ -1,6 +1,9 @@
 // Where to send the user after sign-in. Only same-origin app paths are allowed,
 // so a crafted ?next= can't turn Calsko into an open redirect.
 
+import { myTeamsQuery } from '@/features/teams/api'
+import { queryClient } from '@/lib/query-client'
+
 const NEXT_KEY = 'devdock:auth-next'
 export const DEFAULT_AFTER_LOGIN = '/app'
 
@@ -29,4 +32,22 @@ export function takeNextPath(): string {
   } catch {
     return DEFAULT_AFTER_LOGIN
   }
+}
+
+/**
+ * `next` for the person who just signed in. It is often the page open when the browser was signed
+ * out (idle, or the session limit), which may have been another account's: signed out as one person,
+ * signed in as another, it opened a group they aren't in ("Group not found"). A group page of a
+ * group they aren't in opens their own instead. Reads the memberships the next page loads anyway.
+ */
+export async function nextForUser(next: string, userId: string): Promise<string> {
+  const slug = /^\/t\/([^/?#]+)/.exec(next)?.[1]
+  if (!slug) return next
+  // Signing in clears the cache, which cancels a fetch already running: ask once more. Still unknown
+  // (offline): /app opens a group they're in.
+  const fetch = () => queryClient.fetchQuery(myTeamsQuery(userId))
+  const memberships = await fetch()
+    .catch(fetch)
+    .catch(() => null)
+  return memberships?.some((m) => m.team.slug === slug) ? next : DEFAULT_AFTER_LOGIN
 }
