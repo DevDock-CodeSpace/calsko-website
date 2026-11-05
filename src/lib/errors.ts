@@ -1,7 +1,7 @@
 // Turn Supabase/PostgREST errors into messages that are safe to show users.
 // The raw error is always logged (and reported to error tracking); it is never rendered.
 
-import { reportError } from '@/lib/error-tracking'
+import { errorUserKnown, isNoise, reportError } from '@/lib/error-tracking'
 
 type PostgrestLikeError = { code?: string; message?: string }
 
@@ -36,9 +36,19 @@ export function toDataError(
   const message =
     (code && (overrides[code] ?? byCode[code])) ?? `Couldn’t ${action}. Please try again.`
   const dataError = new DataError(message, code, { cause: error })
-  // Offline is the person's network, not a bug.
-  if (navigator.onLine) reportError(dataError, { source: 'data', action, code, detail: error.message })
+  if (shouldReport(code, error.message)) reportError(dataError, { source: 'data', action, code, detail: error.message })
   return dataError
+}
+
+/**
+ * Offline, or a request that never reached the server, is the person's network, not a bug. Signed out
+ * (session lost while a page was open), Postgres refuses everything as anonymous ("permission denied")
+ * and Storage answers "Object not found": expected, so not reported either.
+ */
+function shouldReport(code: string | undefined, message: string | undefined) {
+  if (!navigator.onLine || isNoise(new Error(message ?? ''))) return false
+  if (!errorUserKnown() && (code === '42501' || message === 'Object not found')) return false
+  return true
 }
 
 /** RLS turns forbidden UPDATE/DELETE into "0 rows affected" instead of an error. */

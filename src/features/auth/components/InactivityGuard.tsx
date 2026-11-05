@@ -30,12 +30,13 @@ export function InactivityGuard() {
   const onLogout = useCallback(async () => {
     await signOutForInactivity()
     setDeadline(null)
-    // Drop anything fetched as this user before the next screen renders.
-    queryClient.clear()
     const search = new URLSearchParams({ reason: INACTIVE_REASON })
     const next = safeNextPath(here)
     if (next !== '/app') search.set('next', next)
-    navigate(`/login?${search}`, { replace: true })
+    // Leave the page, then drop what was fetched as this user: cleared while the page is up, its
+    // queries refetch without a session and fail.
+    await navigate(`/login?${search}`, { replace: true })
+    queryClient.clear()
   }, [navigate, here])
 
   const { staySignedIn } = useInactivityLogout({ limitMs: INACTIVITY_LIMIT_MS, warningMs: WARNING_MS, onWarn: setDeadline, onLogout })
@@ -48,12 +49,12 @@ export function InactivityGuard() {
       if (ending || !sessionExpired()) return
       ending = true
       void signOutForSessionLimit()
-        .then(() => {
-          queryClient.clear()
+        .then(async () => {
           const search = new URLSearchParams({ reason: EXPIRED_REASON })
           const next = safeNextPath(here)
           if (next !== '/app') search.set('next', next)
-          navigate(`/login?${search}`, { replace: true })
+          await navigate(`/login?${search}`, { replace: true })
+          queryClient.clear()
         })
         // Offline: the next check tries again.
         .catch(() => {

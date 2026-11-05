@@ -153,7 +153,7 @@ export default function DiagramView({ diagram, canWrite, embedded = false }: { d
   useEffect(() => {
     if (!canWrite) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+      if ((event.metaKey || event.ctrlKey) && (event.key ?? '').toLowerCase() === 's') {
         event.preventDefault()
         flush().catch((error: unknown) => toast.error(errorMessage(error), { id: 'diagram-save' }))
       }
