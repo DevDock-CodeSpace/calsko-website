@@ -7,7 +7,7 @@ import { saveMyTimeZone } from '@/features/email/api'
 import { getCurrentSession, signOutForInactivity, signOutForSessionLimit } from './api'
 import { captureCalendarToken, clearCalendarToken } from './google-calendar'
 import { isLoginErrorCode, type LoginErrorCode } from './errors'
-import { DEFAULT_AFTER_LOGIN, safeNextPath, takeNextPath } from './redirect'
+import { DEFAULT_AFTER_LOGIN, nextForUser, safeNextPath, takeNextPath } from './redirect'
 
 function loginUrl(params: { next?: string; error?: LoginErrorCode; inactive?: boolean; expired?: boolean }) {
   const search = new URLSearchParams()
@@ -55,7 +55,7 @@ export async function loginLoader({ request }: LoaderFunctionArgs) {
   const next = safeNextPath(url.searchParams.get('next'))
   // Already signed in: skip the login page. A restore failure just shows the page.
   const session = await getCurrentSession().catch(() => null)
-  if (session) throw redirect(next)
+  if (session) throw redirect(await nextForUser(next, session.user.id))
 
   const error = url.searchParams.get('error')
   const reason = url.searchParams.get('reason')
@@ -99,5 +99,5 @@ export async function authCallbackLoader({ request }: LoaderFunctionArgs) {
     // Emails write times in the reader's zone.
     saveMyTimeZone()
   }
-  throw redirect(next)
+  throw redirect(await nextForUser(next, session.user.id))
 }
