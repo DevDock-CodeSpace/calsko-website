@@ -25,7 +25,7 @@ let loading = false
 
 /** Report an error. Safe to call anywhere, any number of times; does nothing when tracking is off. */
 export function reportError(error: unknown, properties: Record<string, unknown> = {}): void {
-  if (!enabled) return
+  if (!enabled || isNoise(error)) return
   if (client) {
     client.captureException(error, properties)
     return
@@ -49,6 +49,18 @@ export function logError(message: string, ...details: unknown[]): void {
     detail: others.length ? describe(others) : undefined,
   })
 }
+
+/**
+ * Not bugs, so not reported: the browser's ResizeObserver notice (harmless, and Chrome fires it on
+ * ordinary layout changes) and requests that never reached a server (connection dropped, laptop asleep).
+ */
+export function isNoise(error: unknown): boolean {
+  const text = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+  return /ResizeObserver loop|Failed to fetch|NetworkError when attempting|Load failed/i.test(text)
+}
+
+/** Whether someone is signed in, as far as error reports know (set by `watchAuthIdentity`). */
+export const errorUserKnown = () => userId !== null
 
 function describe(values: unknown[]): string {
   const text = values

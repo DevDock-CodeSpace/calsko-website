@@ -29,7 +29,8 @@ export function AskDevDockButton() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() !== 'k' || !(isMac ? event.metaKey : event.ctrlKey) || event.shiftKey || event.altKey) return
+      // Chrome's autofill sends keydown events without a key.
+      if ((event.key ?? '').toLowerCase() !== 'k' || !(isMac ? event.metaKey : event.ctrlKey) || event.shiftKey || event.altKey) return
       if (event.defaultPrevented) return
       event.preventDefault()
       setLoaded(true)

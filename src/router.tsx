@@ -279,7 +279,13 @@ export const router = createBrowserRouter([
 
 // Signed in/out elsewhere (another tab, expired session): drop cached data from
 // the previous identity and re-run loaders, which redirect as needed.
-watchAuthIdentity(() => {
-  queryClient.clear()
-  void router.revalidate()
+watchAuthIdentity((userId) => {
+  if (userId) {
+    queryClient.clear()
+    void router.revalidate()
+    return
+  }
+  // Signed out: leave the page first (its loaders send it to /login), then drop the data. Cleared while
+  // the page is still up, every query on it refetched without a session and failed as "permission denied".
+  void router.revalidate().finally(() => queryClient.clear())
 })

@@ -62,10 +62,11 @@ export function useSignOut() {
   const navigate = useNavigate()
   return useMutation({
     mutationFn: signOut,
-    onSuccess: () => {
-      // Drop anything fetched as this user before the next screen renders.
+    onSuccess: async () => {
+      // Leave the page, then drop what was fetched as this user (cleared first, the page's queries
+      // refetch without a session and fail).
+      await navigate('/login', { replace: true })
       queryClient.clear()
-      navigate('/login', { replace: true })
     },
   })
 }

@@ -271,7 +271,7 @@ export default function DocView({
   }
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+    if ((event.metaKey || event.ctrlKey) && (event.key ?? '').toLowerCase() === 's') {
       event.preventDefault()
       if (canEdit) flush().catch((error: unknown) => toast.error(errorMessage(error), { id: 'doc-save' }))
     }
