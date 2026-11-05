@@ -96,6 +96,7 @@ async function record(admin: SupabaseClient, sourceId: string, reports: ErrorRep
       days: r.days,
       days_mode: r.daysMode ?? 'add',
       total: r.total ?? null,
+      people: r.people ?? null,
     }))
     const { error } = await admin.rpc('error_record', { p_source: sourceId, p_reports: chunk })
     if (error) throw new Error(`error_record failed: ${error.message}`)

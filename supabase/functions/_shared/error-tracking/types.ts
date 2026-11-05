@@ -23,6 +23,11 @@ export type ErrorReport = {
   daysMode?: 'add' | 'set'
   /** The error's lifetime count in the tracker, when it says; Calsko's total is at least that. */
   total?: number
+  /**
+   * How many different people it reached, when the tracker says (PostHog per sync, Sentry lifetime).
+   * Calsko keeps the highest seen: an error reaching 2+ people is worth an issue on its first day.
+   */
+  people?: number
 }
 
 /** What a pulled provider gets: its source's settings and secret, and the window to report. */
@@ -72,6 +77,7 @@ export function mergeReports(reports: ErrorReport[]): ErrorReport[] {
       existing.lastSeen = report.lastSeen
     }
     existing.url ??= report.url
+    if (report.people !== undefined) existing.people = Math.max(existing.people ?? 0, report.people)
     if (report.firstSeen && (!existing.firstSeen || report.firstSeen < existing.firstSeen)) existing.firstSeen = report.firstSeen
   }
   return [...merged.values()]

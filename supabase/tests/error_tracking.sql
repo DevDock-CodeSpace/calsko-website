@@ -1,4 +1,4 @@
--- Check for error tracking (20261101120000_error_tracking).
+-- Check for error tracking (20261101120000_error_tracking … 20261105210000_error_issue_threshold).
 --
 -- Run it against a LOCAL or rehearsal database (DevDock Dev), never production:
 --   psql "<dev or local URL>" -v ON_ERROR_STOP=1 -f supabase/tests/error_tracking.sql
@@ -178,6 +178,38 @@ begin
 
   v_checks := v_checks + 1;
   if (select count(*) from public.error_groups_needing_issues(v_hook)) <> 2 then v_fail := v_fail || text 'both errors wait for an issue'; end if;
+
+  -- ------------------------------------------- worth an issue (20261105210000_error_issue_threshold)
+  -- A pulled source: one person's burst on one day waits; 2+ people, or a second day, earns an issue.
+  perform public.error_record(v_ph, jsonb_build_array(
+    jsonb_build_object('fingerprint', 'p1', 'title', 'One laptop''s burst', 'people', 1,
+      'days', jsonb_build_array(jsonb_build_object('day', current_date, 'count', 40))),
+    jsonb_build_object('fingerprint', 'p2', 'title', 'Reaches two people', 'people', 2,
+      'days', jsonb_build_array(jsonb_build_object('day', current_date, 'count', 3))),
+    jsonb_build_object('fingerprint', 'p3', 'title', 'People unknown',
+      'days', jsonb_build_array(jsonb_build_object('day', current_date, 'count', 1)))));
+  v_checks := v_checks + 1;
+  if (select string_agg(fingerprint, ',' order by fingerprint) from public.error_groups_needing_issues(v_ph)) is distinct from 'p2' then
+    v_fail := v_fail || format('only the error reaching 2 people gets an issue on day one: got %s',
+      (select string_agg(fingerprint, ',' order by fingerprint) from public.error_groups_needing_issues(v_ph)));
+  end if;
+  perform public.error_record(v_ph, jsonb_build_array(
+    jsonb_build_object('fingerprint', 'p1', 'title', 'One laptop''s burst', 'people', 1,
+      'days', jsonb_build_array(jsonb_build_object('day', current_date - 1, 'count', 1))),
+    jsonb_build_object('fingerprint', 'p2', 'title', 'Reaches two people', 'people', 1,
+      'days', jsonb_build_array(jsonb_build_object('day', current_date, 'count', 1)))));
+  v_checks := v_checks + 1;
+  if (select string_agg(fingerprint, ',' order by fingerprint) from public.error_groups_needing_issues(v_ph)) is distinct from 'p1,p2' then
+    v_fail := v_fail || text 'an error seen on a second day gets an issue';
+  end if;
+  v_checks := v_checks + 1;
+  if (select people from public.error_groups where source_id = v_ph and fingerprint = 'p2') <> 2 then
+    v_fail := v_fail || text 'the most people seen is kept';
+  end if;
+  v_checks := v_checks + 1;
+  if (select count(*) from public.error_groups where source_id = v_ph and fingerprint = 'p3' and needs_issue) <> 1 then
+    v_fail := v_fail || text 'an error that waits is still counted and flagged';
+  end if;
 
   -- ------------------------------------------------------------------ the issue
   v_number := public.error_create_issue(v_group, 'Checkout crashes', '{"type":"doc","content":[]}', 2);

@@ -28,7 +28,8 @@ export function buildQuery(since: Date, until: Date): string {
       argMax(properties.$exception_values, timestamp) AS vals,
       argMax(properties.$current_url, timestamp) AS page,
       argMax(properties.$browser, timestamp) AS browser,
-      argMax(properties.$os, timestamp) AS os
+      argMax(properties.$os, timestamp) AS os,
+      uniq(distinct_id) AS people
     FROM events
     WHERE event = '$exception'
       AND timestamp > toDateTime('${chTime(since)}', 'UTC')
@@ -79,7 +80,7 @@ export function exceptionText(list: unknown, types: unknown, values: unknown): {
 
 /** One result row → one report. Columns are in buildQuery's order. */
 export function rowToReport(row: unknown[], context: { host: string; projectId: string }): ErrorReport | null {
-  const [gid, day, occurrences, firstTs, lastTs, list, types, vals, page, browser, os] = row
+  const [gid, day, occurrences, firstTs, lastTs, list, types, vals, page, browser, os, people] = row
   const count = Number(occurrences)
   if (!Number.isFinite(count) || count <= 0) return null
   const { title, stack } = exceptionText(list, types, vals)
@@ -101,6 +102,7 @@ export function rowToReport(row: unknown[], context: { host: string; projectId: 
     firstSeen: toIso(firstTs),
     lastSeen: toIso(lastTs),
     days: [{ day: str(day).slice(0, 10) || isoDay(new Date()), count }],
+    people: Number.isFinite(Number(people)) && Number(people) > 0 ? Number(people) : undefined,
   }
 }
 
