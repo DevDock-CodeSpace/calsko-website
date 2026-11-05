@@ -148,7 +148,7 @@ export function ConnectErrorSourceDialog({ workspaceId, open, onOpenChange, edit
                 ? pulled
                   ? 'Leave the key empty to keep the one saved.'
                   : 'The webhook URL and token stay the same.'
-                : 'Once a day Calsko collects its errors. A new kind of error becomes an issue here; the same error again only adds to its count.'}
+                : 'Once a day Calsko collects its errors. A new kind of error becomes an issue here once it has reached 2 people or happened on 2 days (one-off bursts are only counted); the same error again only adds to its count.'}
             </DialogDescription>
           </DialogHeader>
 

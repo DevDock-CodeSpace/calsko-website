@@ -113,13 +113,14 @@ const LIST = JSON.stringify([
 
 Deno.test('posthog: rows become reports with the stack innermost first', () => {
   const report = rowToReport(
-    [ISSUE, '2026-10-31', 12, '2026-10-31 08:00:00', '2026-10-31 20:00:00', LIST, '[]', '[]', 'https://www.calsko.com/t/x/cart', 'Chrome', 'Mac OS X'],
+    [ISSUE, '2026-10-31', 12, '2026-10-31 08:00:00', '2026-10-31 20:00:00', LIST, '[]', '[]', 'https://www.calsko.com/t/x/cart', 'Chrome', 'Mac OS X', 3],
     { host: 'https://us.posthog.com', projectId: '698520' },
   )!
   assertEquals(report.fingerprint, `ph_${ISSUE}`)
   assertEquals(report.title, "TypeError: Cannot read properties of undefined (reading 'total')")
   assertEquals(report.url, `https://us.posthog.com/project/698520/error_tracking/${ISSUE}`)
   assertEquals(report.days, [{ day: '2026-10-31', count: 12 }])
+  assertEquals(report.people, 3)
   assertEquals(report.lastSeen, '2026-10-31T20:00:00.000Z')
   const lines = report.raw.split('\n')
   assertEquals(lines[1], '    at applyCoupon (src/features/cart/coupon.ts:42:7)')
@@ -133,12 +134,24 @@ Deno.test('posthog: falls back to types and values, skips empty rows', () => {
   const noId = rowToReport(['', '2026-10-31', 1, '', '', null, '["E"]', '["m"]'], { host: 'https://us.posthog.com', projectId: '1' })!
   assertEquals(noId.fingerprint, 'ph_title_E: m')
   assertEquals(noId.url, undefined)
+  assertEquals(noId.people, undefined)
 })
 
 Deno.test('posthog: the query covers exactly the window, in UTC', () => {
   const q = buildQuery(new Date('2026-10-31T06:00:00Z'), new Date('2026-11-01T06:00:00Z'))
   assert(q.includes("timestamp > toDateTime('2026-10-31 06:00:00', 'UTC')"))
   assert(q.includes("timestamp <= toDateTime('2026-11-01 06:00:00', 'UTC')"))
+  assert(q.includes('uniq(distinct_id) AS people'))
+})
+
+Deno.test('merging keeps the most people any report saw', () => {
+  const day = (d: string) => [{ day: d, count: 1 }]
+  const [merged] = mergeReports([
+    { fingerprint: 'f', title: 'E', raw: '', days: day('2026-10-30'), people: 1 },
+    { fingerprint: 'f', title: 'E', raw: '', days: day('2026-10-31'), people: 4 },
+    { fingerprint: 'f', title: 'E', raw: '', days: day('2026-11-01') },
+  ])
+  assertEquals(merged.people, 4)
 })
 
 Deno.test('posthog: pull merges days per issue and explains a refused key', async () => {
@@ -235,12 +248,14 @@ const SENTRY_ISSUE = {
   lastSeen: '2026-11-01T09:00:00Z',
   count: '12',
   lifetime: { count: '340' },
+  userCount: 5,
   stats: { '14d': [[DAY('2026-10-29'), 7], [DAY('2026-10-30'), 0], [DAY('2026-10-31'), 5], [DAY('2026-11-01'), 7]] as [number, number][] },
 }
 
 Deno.test('sentry: an issue becomes a report with whole-day counts from the sync window', () => {
   const report = issueToReport(SENTRY_ISSUE, new Date('2026-10-31T06:00:00Z'))!
   assertEquals(report.fingerprint, 'sentry_4821')
+  assertEquals(report.people, 5)
   assertEquals(report.daysMode, 'set')
   assertEquals(report.days, [{ day: '2026-10-31', count: 5 }, { day: '2026-11-01', count: 7 }])
   assertEquals(report.total, 340)
