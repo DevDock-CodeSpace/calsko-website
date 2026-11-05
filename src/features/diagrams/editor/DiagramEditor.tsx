@@ -706,7 +706,7 @@ function Editor({ initial, readOnly, onChange, fullscreen, onFullscreen }: Diagr
       const target = event.target as HTMLElement | null
       if (target?.closest('input, textarea, select, [contenteditable], [role="dialog"], [role="menu"]')) return
       const mod = event.metaKey || event.ctrlKey
-      const key = event.key.toLowerCase()
+      const key = (event.key ?? '').toLowerCase()
 
       if (mod && key === 'z') {
         event.preventDefault()

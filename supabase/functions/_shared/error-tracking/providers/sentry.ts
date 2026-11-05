@@ -27,6 +27,7 @@ type SentryIssue = {
   lastSeen?: string
   count?: string | number
   lifetime?: { count?: string | number } | null
+  userCount?: string | number
   metadata?: { type?: string; value?: string; filename?: string; function?: string } | null
   stats?: Record<string, [number, number][]>
 }
@@ -124,6 +125,7 @@ export function issueToReport(issue: SentryIssue, since: Date): ErrorReport | nu
     days: [...byDay].map(([day, count]) => ({ day, count })),
     daysMode: 'set',
     total: Number.isFinite(lifetime) ? lifetime : undefined,
+    people: Number(str(issue.userCount)) > 0 ? Number(str(issue.userCount)) : undefined,
   }
 }
 

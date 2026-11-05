@@ -2,7 +2,7 @@
 
 Errors from an error tracker (PostHog, Sentry, Datadog and New Relic through the webhook, or anything else that can send one) become issues in a project. The owner chose this design on 2026-11-01.
 
-- A new kind of error gets an issue. AI writes it, and the exact error is copied below what the AI wrote.
+- A new kind of error gets an issue once it's **worth one**: it has reached at least 2 people, or happened on 2 different days. Until then it's only counted, so one laptop's burst (a lost session failing every query at once) or a one-off network drop never becomes an issue. Errors back after Done, and webhook sources (a tool's alerts, already filtered there), aren't held back. `error_groups.people` keeps the most people any report said it reached (PostHog: distinct people per sync; Sentry: its user count). AI writes the issue, and the exact error is copied below what the AI wrote.
 - Every error issue carries two labels: **Error**, and one for where it came from: `posthog-errors` for PostHog, or a webhook's name plus `-errors` ("Sentry alerts" → `sentry-alerts-errors`). Both are made in the project when missing.
 - A source can put its issues into a **plan**, chosen or named when connecting or in **Edit…** (`set_error_source_plan`). Choosing one also moves the source's open issues that have no plan yet, unless that box is unticked.
 - The same error happening again only adds to its count while its issue is open.
@@ -135,7 +135,7 @@ Rollbar, Bugsnag, CloudWatch, Azure and Google Cloud are on hold (owner, 2026-11
 ## Tests
 
 - `npm run test:errors` (Deno, no database): fingerprints, the webhook format, PostHog rows and request, the issue template, the AI reply and the description.
-- `psql "<dev or local URL>" -f supabase/tests/error_tracking.sql`: 62 checks covering access, secrets, counting, issues, labels, plans, regressions, Canceled, Sync now and removal. It rolls back.
+- `psql "<dev or local URL>" -f supabase/tests/error_tracking.sql`: 72 checks covering access, secrets, counting, issues, labels, plans, regressions, Canceled, Sync now and removal. It rolls back.
 
 ## Cost
 

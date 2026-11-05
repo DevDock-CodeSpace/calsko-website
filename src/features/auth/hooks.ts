@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useRouteLoaderData } from 'react-router'
 import { APP_ROUTE_ID, type appLoader } from '@/layouts/app-loader'
-import { profileQuery, signInWithPassword, signInWithProvider, signOut, type SignInProvider } from './api'
+import { getCurrentSession, profileQuery, signInWithPassword, signInWithProvider, signOut, type SignInProvider } from './api'
+import { nextForUser } from './redirect'
 
 /** The signed-in user. Only usable inside the authenticated app layout. */
 export function useAuth() {
@@ -48,9 +49,10 @@ export function useSignInWithPassword(next: string) {
   const navigate = useNavigate()
   return useMutation({
     mutationFn: (input: { email: string; password: string; remember: boolean }) => signInWithPassword(input.email, input.password, input.remember),
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.clear()
-      navigate(next, { replace: true })
+      const session = await getCurrentSession().catch(() => null)
+      navigate(session ? await nextForUser(next, session.user.id) : next, { replace: true })
     },
   })
 }
@@ -60,10 +62,11 @@ export function useSignOut() {
   const navigate = useNavigate()
   return useMutation({
     mutationFn: signOut,
-    onSuccess: () => {
-      // Drop anything fetched as this user before the next screen renders.
+    onSuccess: async () => {
+      // Leave the page, then drop what was fetched as this user (cleared first, the page's queries
+      // refetch without a session and fail).
+      await navigate('/login', { replace: true })
       queryClient.clear()
-      navigate('/login', { replace: true })
     },
   })
 }

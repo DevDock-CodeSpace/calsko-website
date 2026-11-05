@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react'
 
 /** Keys as written in handler maps: "c", "shift+c", "?", "arrowdown", "enter", "escape". */
 function keyName(event: KeyboardEvent) {
-  const key = event.key.toLowerCase()
+  const key = (event.key ?? '').toLowerCase()
   if (key === '?') return '?'
   return event.shiftKey && key.length === 1 ? `shift+${key}` : key
 }

@@ -98,8 +98,9 @@ export function PrivacyPage() {
             A project lead or a group owner or admin can connect an error tracker, such as PostHog, or a webhook that
             other tools send errors to. Once a day Calsko collects the errors it reports and keeps, for each kind of
             error: its message and stack trace, the page and browser it happened in, how many times it happened each
-            day, and a link back to the tracker. A new kind of error becomes an issue in the project, which everyone in
-            the project can read like any other issue.
+            day, how many people it reached (a number, never who), and a link back to the tracker. A new kind of error
+            becomes an issue in the project once it has reached 2 people or happened on 2 days, and everyone in the
+            project can read it like any other issue.
           </p>
           <p>
             Calsko keeps the tracker’s API key encrypted and a webhook’s token only as a fingerprint, and never shows
