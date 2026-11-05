@@ -1,5 +1,5 @@
 import { Search, X } from 'lucide-react'
-import { useState, type DragEvent, type ReactNode } from 'react'
+import { useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { CLOUD_PROVIDERS } from './cloud'
@@ -44,6 +44,7 @@ export function ShapePanel({
   onForget: (item: LibraryItem) => void
 }) {
   const [query, setQuery] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
   const q = query.trim().toLowerCase()
   const searching = q !== ''
   const matches = (...words: string[]) => !q || words.some((w) => w.toLowerCase().includes(q))
@@ -69,12 +70,34 @@ export function ShapePanel({
         <div className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
+            ref={searchRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Escape') return
+              // Esc clears the search; on an empty box it leaves it, back to the canvas.
+              e.stopPropagation()
+              if (query) setQuery('')
+              else e.currentTarget.blur()
+            }}
             placeholder="Search shapes"
             aria-label="Search shapes"
-            className="h-8 pl-8 text-sm"
+            className={cn('h-8 pl-8 text-sm', query && 'pr-8')}
           />
+          {query && (
+            <button
+              type="button"
+              onClick={() => {
+                setQuery('')
+                searchRef.current?.focus()
+              }}
+              aria-label="Clear search"
+              title="Clear search (Esc)"
+              className="absolute top-1/2 right-1.5 flex size-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
         </div>
       </div>
       {/* Never sideways: every tile fits its column (long names wrap, see Tile). */}

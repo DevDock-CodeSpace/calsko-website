@@ -1,11 +1,15 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect } from 'react'
 import { issueKeys } from '@/features/issues/api'
 import { DataError } from '@/lib/errors'
 import {
   addGitHubRepo,
+  announceGitHubConnected,
+  connectGitHub,
   createRepo,
   deleteRepo,
   disconnectGitHub,
+  GITHUB_CONNECT_CHANNEL,
   linkRepo,
   parseRepo,
   repoKeys,
@@ -93,8 +97,17 @@ export function useDeleteRepo() {
   })
 }
 
-/** Sends the owner/admin to GitHub to install the App (the page navigates away on success). */
+/**
+ * Opens GitHub in a new tab to install the App. When that tab finishes (/github/callback),
+ * this one refetches the install and repos.
+ */
 export function useConnectGitHub(teamId: string) {
+  const queryClient = useQueryClient()
+  useEffect(() => {
+    const channel = new BroadcastChannel(GITHUB_CONNECT_CHANNEL)
+    channel.onmessage = () => void queryClient.invalidateQueries({ queryKey: repoKeys.all })
+    return () => channel.close()
+  }, [queryClient])
   return useMutation({ mutationFn: () => startGitHubConnect(teamId) })
 }
 
@@ -103,5 +116,18 @@ export function useDisconnectGitHub(teamId: string) {
   return useMutation({
     mutationFn: (installationId: number) => disconnectGitHub(teamId, installationId),
     onSuccess: () => refresh(false),
+  })
+}
+
+/** Connects the account picked on /github/callback (one the Edge Function offered this person). */
+export function usePickGitHubInstallation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { state: string; installationId: number }) => {
+      const result = await connectGitHub(input)
+      if (result.kind !== 'connected') throw new DataError('That GitHub account wasn’t connected. Start again from Group settings.')
+      await queryClient.invalidateQueries({ queryKey: repoKeys.all })
+      return { ...result, openedTab: announceGitHubConnected() }
+    },
   })
 }

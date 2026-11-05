@@ -108,6 +108,13 @@ export function LinkRepoDialog({
             </div>
           )}
 
+          {connected && !canAdd && (
+            <p className="text-sm text-muted-foreground">
+              {available.length === 0 ? 'No repositories in this group are left to link. ' : ''}
+              Only group owners and admins can add repositories from GitHub to the group, in Group settings → Repositories.
+            </p>
+          )}
+
           {!connected && (
             <div className="space-y-1.5">
               <Label htmlFor="repo-input">{canAdd ? 'Or add one by name' : 'Find by name'}</Label>
