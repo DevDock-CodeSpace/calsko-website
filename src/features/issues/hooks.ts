@@ -5,9 +5,8 @@ import { toast } from 'sonner'
 import { useAuth } from '@/features/auth/hooks'
 import { teamPlansQuery } from '@/features/plans/api'
 import { workspaceReposQuery } from '@/features/repos/api'
-import { useCurrentTeam, useCurrentWorkspace } from '@/features/teams/hooks'
-import { workspacePermissions } from '@/features/teams/permissions'
-import { myWorkspaceRolesQuery, workspaceMembersQuery, workspaceQuery } from '@/features/workspaces/api'
+import { useCurrentWorkspace } from '@/features/teams/hooks'
+import { workspaceMembersQuery } from '@/features/workspaces/api'
 import { errorMessage } from '@/lib/errors'
 import {
   createIssueBranch,
@@ -43,35 +42,6 @@ export function useIssueContext() {
     ],
   })
   return { workspace, members, labels, cycles, repos, plans, canManage: can.canEdit, userId: user.id }
-}
-
-/** Issue-form context for a project chosen from outside its workspace route. */
-export function useIssueContextForWorkspace(workspaceId: string) {
-  const { user } = useAuth()
-  const { team, role } = useCurrentTeam()
-  const [{ data: workspace }, { data: roles }, { data: members }, { data: labels }, { data: cycles }, { data: repos }, { data: plans }] =
-    useSuspenseQueries({
-      queries: [
-        workspaceQuery(workspaceId),
-        myWorkspaceRolesQuery(team.id, user.id),
-        workspaceMembersQuery(workspaceId),
-        labelsQuery(workspaceId),
-        cyclesQuery(workspaceId),
-        workspaceReposQuery(workspaceId),
-        teamPlansQuery(team.id),
-      ],
-    })
-  if (!workspace || workspace.team_id !== team.id) throw new Error('The selected project is no longer available.')
-  return {
-    workspace,
-    members,
-    labels,
-    cycles,
-    repos,
-    plans,
-    canManage: workspacePermissions(role, roles[workspace.id]).canEdit,
-    userId: user.id,
-  }
 }
 
 type UpdateVars = { issue: Pick<Issue, 'id' | 'number'>; patch?: IssuePatch; labelIds?: string[] }

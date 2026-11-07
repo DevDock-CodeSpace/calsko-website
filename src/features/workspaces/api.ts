@@ -23,7 +23,7 @@ export type Workspace = Pick<
 }
 export type WorkspaceSummary = Pick<
   Tables<'workspaces'>,
-  'id' | 'title' | 'description' | 'type' | 'access' | 'collection_id' | 'updated_at'
+  'id' | 'title' | 'description' | 'type' | 'issue_key' | 'access' | 'collection_id' | 'updated_at'
 > & {
   /** Enabled tools (used by the team-level tool pages). */
   modules: WorkspaceModule[]
@@ -60,7 +60,7 @@ const teamContents = (teamId: string) => ({
       .select(
         `team_members(user_id),
          workspace_collections(id, name, type, position, workspace_collection_members(user_id)),
-         workspaces(id, title, description, type, access, collection_id, updated_at, workspace_modules(module),
+         workspaces(id, title, description, type, issue_key, access, collection_id, updated_at, workspace_modules(module),
            workspace_members(user_id, role, profile:profiles(display_name, avatar_url)))`,
       )
       .eq('id', teamId)

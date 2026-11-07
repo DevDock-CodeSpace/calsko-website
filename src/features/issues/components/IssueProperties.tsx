@@ -283,17 +283,14 @@ function DueDate({ value, onChange }: { value: string | null; onChange: (date: s
   return (
     <div className="group/due relative flex items-center">
       <DueDatePicker value={value} onChange={onChange} className="flex-1">
-        {(open) => (
-          <Value
-            muted={!value}
-            aria-label={value ? `Due date: ${formatDate(value)}` : 'Set due date'}
-            onClick={open}
-            className={cn(overdue && 'text-red-600 dark:text-red-400')}
-          >
-            <CalendarDays className={cn('size-4 shrink-0', overdue ? 'text-red-500' : 'text-muted-foreground')} />
-            {value ? formatDate(value) : 'Set due date'}
-          </Value>
-        )}
+        <Value
+          muted={!value}
+          aria-label={value ? `Due date: ${formatDate(value)}` : 'Set due date'}
+          className={cn(overdue && 'text-red-600 dark:text-red-400')}
+        >
+          <CalendarDays className={cn('size-4 shrink-0', overdue ? 'text-red-500' : 'text-muted-foreground')} />
+          {value ? formatDate(value) : 'Set due date'}
+        </Value>
       </DueDatePicker>
       {value && (
         <button

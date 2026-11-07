@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '@/features/auth/hooks'
 import { useLiveCall } from '@/features/live/call/context'
 import { readLastActivity } from '@/lib/inactivity'
@@ -20,21 +20,21 @@ export function useStatusSync(teamId: string) {
   const { call } = useLiveCall()
   const chosen = useChosenStatus()
   const idle = useIdle()
-  const [room, setRoom] = useState<ReturnType<typeof joinGroupStatus> | null>(null)
+  const room = useRef<ReturnType<typeof joinGroupStatus> | null>(null)
 
   useEffect(() => {
     const joined = joinGroupStatus(teamId, setStatusTabs)
-    setRoom(joined)
+    room.current = joined
     return () => {
       joined.leave()
       clearStatuses()
-      setRoom(null)
+      room.current = null
     }
   }, [teamId])
 
   useEffect(() => {
-    if (room && userId) room.set({ userId, status: tabStatus(chosen, call !== null, idle) })
-  }, [room, userId, chosen, call, idle])
+    if (room.current && userId) room.current.set({ userId, status: tabStatus(chosen, call !== null, idle) })
+  }, [teamId, userId, chosen, call, idle])
 }
 
 /** True after AWAY_AFTER_MS without input in any Calsko tab (the inactivity clock, shared by tabs). */

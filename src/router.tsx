@@ -28,13 +28,9 @@ import { IssuesHubLayout } from '@/routes/team/IssuesHubLayout'
 import { TeamLivePage } from '@/routes/team/TeamLivePage'
 import { TeamMembersPage } from '@/routes/team/TeamMembersPage'
 import { TeamWorkspacesPage } from '@/routes/team/TeamWorkspacesPage'
-import { IssueCyclePage } from '@/routes/workspace/IssueCyclePage'
-import { IssueCyclesPage } from '@/routes/workspace/IssueCyclesPage'
-import { IssuePage } from '@/routes/workspace/IssuePage'
 import { LessonPage } from '@/routes/workspace/LessonPage'
 import { WorkspaceLearningPage } from '@/routes/workspace/WorkspaceLearningPage'
 import { WorkspaceLivePage } from '@/routes/workspace/WorkspaceLivePage'
-import { WorkspaceIssuesPage } from '@/routes/workspace/WorkspaceIssuesPage'
 import { WorkspaceLayout } from '@/routes/workspace/WorkspaceLayout'
 import { WorkspaceMembersPage } from '@/routes/workspace/WorkspaceMembersPage'
 import { WorkspaceOverviewPage } from '@/routes/workspace/WorkspaceOverviewPage'
@@ -231,10 +227,10 @@ export const router = createBrowserRouter([
                     loader: issuesLoader,
                     element: <WorkspaceToolGate tool="issues" />,
                     children: [
-                      { index: true, element: <WorkspaceIssuesPage /> },
-                      { path: 'cycles', element: <IssueCyclesPage /> },
-                      { path: 'cycles/:cycleNumber', loader: cycleLoader, element: <IssueCyclePage /> },
-                      { path: ':issueNumber', loader: issueLoader, element: <IssuePage /> },
+                      { index: true, lazy: async () => ({ Component: (await import('@/routes/workspace/WorkspaceIssuesPage')).WorkspaceIssuesPage }) },
+                      { path: 'cycles', lazy: async () => ({ Component: (await import('@/routes/workspace/IssueCyclesPage')).IssueCyclesPage }) },
+                      { path: 'cycles/:cycleNumber', loader: cycleLoader, lazy: async () => ({ Component: (await import('@/routes/workspace/IssueCyclePage')).IssueCyclePage }) },
+                      { path: ':issueNumber', loader: issueLoader, lazy: async () => ({ Component: (await import('@/routes/workspace/IssuePage')).IssuePage }) },
                     ],
                   },
                   {

@@ -12,7 +12,7 @@ import { issuePath } from '@/features/teams/nav'
 import type { Json } from '@/types/database.types'
 import { createIssue, issueKeys, type Issue, type IssuePriority, type IssueStatus } from '../api'
 import { cycleTitle } from '../cycles'
-import { useIssueContext, useIssueContextForWorkspace } from '../hooks'
+import { useIssueContext } from '../hooks'
 import { imageNode, removeIssueImages, uploadIssueImage } from '../images'
 import { issueIdentifier, priorityLabel, statusLabel } from '../meta'
 import { AssigneePicker } from './AssigneePicker'
@@ -28,6 +28,7 @@ import { StatusIcon } from './StatusIcon'
 import { StatusPicker } from './StatusPicker'
 import { ownWrite } from '@/lib/realtime'
 import { GitHubMark } from '@/features/repos/components/GitHubMark'
+import type { Workspace } from '@/features/workspaces/api'
 
 /**
  * Plain text (one paragraph per line) followed by the attached images → a
@@ -47,8 +48,11 @@ function toDoc(text: string, images: Json[]): Json | null {
 type Attachment = { id: string; file: File; preview: string }
 
 const MAX_ATTACHMENTS = 10
+type IssueDialogContext = Omit<ReturnType<typeof useIssueContext>, 'workspace'> & {
+  workspace: Pick<Workspace, 'id' | 'title' | 'issue_key'>
+}
 
-type CreateIssueDialogProps = {
+export type CreateIssueDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   /** Starting status (e.g. the list group or board column it was opened from). */
@@ -67,15 +71,7 @@ export function CreateIssueDialog(props: CreateIssueDialogProps) {
   return <CreateIssueDialogForm {...props} context={context} />
 }
 
-export function CreateIssueDialogForWorkspace({
-  workspaceId,
-  ...props
-}: CreateIssueDialogProps & { workspaceId: string }) {
-  const context = useIssueContextForWorkspace(workspaceId)
-  return <CreateIssueDialogForm {...props} context={context} />
-}
-
-function CreateIssueDialogForm({
+export function CreateIssueDialogForm({
   open,
   onOpenChange,
   status: initialStatus = 'todo',
@@ -83,7 +79,7 @@ function CreateIssueDialogForm({
   cycleId: initialCycle = null,
   planId: initialPlan = null,
   context,
-}: CreateIssueDialogProps & { context: ReturnType<typeof useIssueContext> }) {
+}: CreateIssueDialogProps & { context: IssueDialogContext }) {
   const { team } = useCurrentTeam()
   const { workspace, members, labels, cycles, repos, plans, canManage, userId } = context
   const queryClient = useQueryClient()
