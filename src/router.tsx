@@ -18,29 +18,10 @@ import { messagesLoader } from '@/features/messaging/loaders'
 import { AppLayout } from '@/layouts/AppLayout'
 import { APP_ROUTE_ID, appLoader } from '@/layouts/app-loader'
 import { queryClient } from '@/lib/query-client'
-import { DiagramPage } from '@/routes/DiagramPage'
-import { DocPage } from '@/routes/DocPage'
-import { MessagesPage } from '@/routes/team/MessagesPage'
 import { FULL_BLEED } from '@/layouts/full-bleed'
 import { NotFoundPage, RouteErrorPage } from '@/routes/NotFoundPage'
-import { OnboardingPage } from '@/routes/OnboardingPage'
-import { IssuesHubLayout } from '@/routes/team/IssuesHubLayout'
-import { TeamLivePage } from '@/routes/team/TeamLivePage'
-import { TeamMembersPage } from '@/routes/team/TeamMembersPage'
-import { TeamWorkspacesPage } from '@/routes/team/TeamWorkspacesPage'
-import { IssueCyclePage } from '@/routes/workspace/IssueCyclePage'
-import { IssueCyclesPage } from '@/routes/workspace/IssueCyclesPage'
-import { IssuePage } from '@/routes/workspace/IssuePage'
-import { LessonPage } from '@/routes/workspace/LessonPage'
-import { WorkspaceLearningPage } from '@/routes/workspace/WorkspaceLearningPage'
-import { WorkspaceLivePage } from '@/routes/workspace/WorkspaceLivePage'
-import { WorkspaceIssuesPage } from '@/routes/workspace/WorkspaceIssuesPage'
 import { WorkspaceLayout } from '@/routes/workspace/WorkspaceLayout'
-import { WorkspaceMembersPage } from '@/routes/workspace/WorkspaceMembersPage'
-import { WorkspaceOverviewPage } from '@/routes/workspace/WorkspaceOverviewPage'
-import { WorkspaceTabPage } from '@/routes/workspace/WorkspaceTabPage'
 import { WorkspaceToolGate } from '@/routes/workspace/WorkspaceToolGate'
-import { DiagramsRedirect } from '@/routes/DiagramsRedirect'
 import { meetingCalendar } from '@/features/live/screens'
 
 export const router = createBrowserRouter([
@@ -107,7 +88,7 @@ export const router = createBrowserRouter([
     children: [
       // Redirects to the last/first team, or /onboarding when there are none.
       { path: 'app', loader: appIndexLoader, element: <AuthLoading /> },
-      { path: 'onboarding', loader: onboardingLoader, element: <OnboardingPage /> },
+      { path: 'onboarding', loader: onboardingLoader, lazy: async () => ({ Component: (await import('@/routes/OnboardingPage')).OnboardingPage }) },
       {
         // The platform admin console: counts, names and feature flags, outside every group. 404 for
         // anyone who isn't a platform admin (adminLoader); every read is checked again by the database.
@@ -139,21 +120,21 @@ export const router = createBrowserRouter([
           {
             errorElement: <RouteErrorPage inline />,
             children: [
-              { index: true, element: <TeamWorkspacesPage /> },
+              { index: true, lazy: async () => ({ Component: (await import('@/routes/team/TeamWorkspacesPage')).TeamWorkspacesPage }) },
               // The open conversation's view (TipTap composer) starts downloading with the page, so it renders at once.
-              { path: 'messages', handle: FULL_BLEED, loader: messagesLoader, element: <MessagesPage /> },
+              { path: 'messages', handle: FULL_BLEED, loader: messagesLoader, lazy: async () => ({ Component: (await import('@/routes/team/MessagesPage')).MessagesPage }) },
               // Where the group opens (after sign-in, or switching group or collection): its loader redirects.
               { path: 'start', loader: teamStartLoader },
-              { path: 'members', loader: teamMembersLoader, element: <TeamMembersPage /> },
+              { path: 'members', loader: teamMembersLoader, lazy: async () => ({ Component: (await import('@/routes/team/TeamMembersPage')).TeamMembersPage }) },
               { path: 'settings', lazy: async () => ({ Component: (await import('@/routes/team/TeamSettingsPage')).TeamSettingsPage }) },
               // Team → Files (URL docs): group-wide docs and diagrams + those of every workspace the user can see.
               // Lazy page; filesLoader starts its queries alongside the chunk.
               { path: 'docs', loader: filesLoader, shouldRevalidate: filesShouldRevalidate, lazy: async () => ({ Component: (await import('@/routes/team/TeamDocsPage')).TeamDocsPage }) },
-              { path: 'docs/:docId', loader: docLoader, element: <DocPage /> },
+              { path: 'docs/:docId', loader: docLoader, lazy: async () => ({ Component: (await import('@/routes/DocPage')).DocPage }) },
               // The old Diagrams list opens Files showing diagrams; diagram pages keep their URLs.
-              { path: 'diagrams', element: <DiagramsRedirect /> },
+              { path: 'diagrams', lazy: async () => ({ Component: (await import('@/routes/DiagramsRedirect')).DiagramsRedirect }) },
               // Full-bleed: the canvas takes the whole area under the top bar (DiagramView sets its height).
-              { path: 'diagrams/:diagramId', loader: diagramLoader, handle: FULL_BLEED, element: <DiagramPage /> },
+              { path: 'diagrams/:diagramId', loader: diagramLoader, handle: FULL_BLEED, lazy: async () => ({ Component: (await import('@/routes/DiagramPage')).DiagramPage }) },
               // Learning (learning platform): Teaching, My learning and Browse courses, from one call.
               { path: 'learning', loader: teamLearningLoader, lazy: async () => ({ Component: (await import('@/routes/team/TeamLearningPage')).TeamLearningPage }) },
               {
@@ -161,7 +142,7 @@ export const router = createBrowserRouter([
                 // group has issues; issuesHubLoader starts the group's issues, plans and people. Tabs are lazy.
                 path: 'issues',
                 loader: issuesHubLoader,
-                element: <IssuesHubLayout />,
+                lazy: async () => ({ Component: (await import('@/routes/team/IssuesHubLayout')).IssuesHubLayout }),
                 children: [
                   { index: true, lazy: async () => ({ Component: (await import('@/routes/team/HubMyIssuesPage')).HubMyIssuesPage }) },
                   { path: 'plans', lazy: async () => ({ Component: (await import('@/routes/team/HubPlansPage')).HubPlansPage }) },
@@ -174,7 +155,7 @@ export const router = createBrowserRouter([
               },
               // Group → Live: video sessions (Jitsi via JaaS) for the group and its workspaces.
               // The calendar (the default view) loads with the page, so it renders without waiting on its code.
-              { path: 'live', loader: () => meetingCalendar.preload().then(() => null), element: <TeamLivePage /> },
+              { path: 'live', loader: () => meetingCalendar.preload().then(() => null), lazy: async () => ({ Component: (await import('@/routes/team/TeamLivePage')).TeamLivePage }) },
               { path: 'live/:sessionId', loader: liveSessionLoader, lazy: async () => ({ Component: (await import('@/routes/LiveSessionPage')).LiveSessionPage }) },
               // Notes live in the header's panel; the old page's address (bookmarks, older notifications)
               // opens it on Chat, at the note it named.
@@ -190,8 +171,8 @@ export const router = createBrowserRouter([
                 loader: workspaceLoader,
                 element: <WorkspaceLayout />,
                 children: [
-                  { index: true, element: <WorkspaceOverviewPage /> },
-                  { path: 'members', element: <WorkspaceMembersPage /> },
+                  { index: true, lazy: async () => ({ Component: (await import('@/routes/workspace/WorkspaceOverviewPage')).WorkspaceOverviewPage }) },
+                  { path: 'members', lazy: async () => ({ Component: (await import('@/routes/workspace/WorkspaceMembersPage')).WorkspaceMembersPage }) },
                   {
                     path: 'settings',
                     children: [
@@ -212,7 +193,10 @@ export const router = createBrowserRouter([
                     element: <WorkspaceToolGate tool={['docs', 'diagrams']} />,
                     children: [
                       { index: true, loader: filesLoader, shouldRevalidate: filesShouldRevalidate, lazy: async () => ({ Component: (await import('@/routes/workspace/WorkspaceDocsPage')).WorkspaceDocsPage }) },
-                      { element: <WorkspaceToolGate tool="docs" />, children: [{ path: ':docId', loader: docLoader, element: <DocPage /> }] },
+                      {
+                        element: <WorkspaceToolGate tool="docs" />,
+                        children: [{ path: ':docId', loader: docLoader, lazy: async () => ({ Component: (await import('@/routes/DocPage')).DocPage }) }],
+                      },
                     ],
                   },
                   {
@@ -220,8 +204,8 @@ export const router = createBrowserRouter([
                     path: 'diagrams',
                     element: <WorkspaceToolGate tool="diagrams" />,
                     children: [
-                      { index: true, element: <DiagramsRedirect /> },
-                      { path: ':diagramId', loader: diagramLoader, handle: FULL_BLEED, element: <DiagramPage /> },
+                      { index: true, lazy: async () => ({ Component: (await import('@/routes/DiagramsRedirect')).DiagramsRedirect }) },
+                      { path: ':diagramId', loader: diagramLoader, handle: FULL_BLEED, lazy: async () => ({ Component: (await import('@/routes/DiagramPage')).DiagramPage }) },
                     ],
                   },
                   {
@@ -231,10 +215,10 @@ export const router = createBrowserRouter([
                     loader: issuesLoader,
                     element: <WorkspaceToolGate tool="issues" />,
                     children: [
-                      { index: true, element: <WorkspaceIssuesPage /> },
-                      { path: 'cycles', element: <IssueCyclesPage /> },
-                      { path: 'cycles/:cycleNumber', loader: cycleLoader, element: <IssueCyclePage /> },
-                      { path: ':issueNumber', loader: issueLoader, element: <IssuePage /> },
+                      { index: true, lazy: async () => ({ Component: (await import('@/routes/workspace/WorkspaceIssuesPage')).WorkspaceIssuesPage }) },
+                      { path: 'cycles', lazy: async () => ({ Component: (await import('@/routes/workspace/IssueCyclesPage')).IssueCyclesPage }) },
+                      { path: 'cycles/:cycleNumber', loader: cycleLoader, lazy: async () => ({ Component: (await import('@/routes/workspace/IssueCyclePage')).IssueCyclePage }) },
+                      { path: ':issueNumber', loader: issueLoader, lazy: async () => ({ Component: (await import('@/routes/workspace/IssuePage')).IssuePage }) },
                     ],
                   },
                   {
@@ -243,9 +227,9 @@ export const router = createBrowserRouter([
                     loader: learningLoader,
                     element: <WorkspaceToolGate tool="learning" />,
                     children: [
-                      { index: true, element: <WorkspaceLearningPage /> },
+                      { index: true, lazy: async () => ({ Component: (await import('@/routes/workspace/WorkspaceLearningPage')).WorkspaceLearningPage }) },
                       { path: 'progress', lazy: async () => ({ Component: (await import('@/routes/workspace/LearningProgressPage')).LearningProgressPage }) },
-                      { path: ':lessonId', loader: lessonLoader, element: <LessonPage /> },
+                      { path: ':lessonId', loader: lessonLoader, lazy: async () => ({ Component: (await import('@/routes/workspace/LessonPage')).LessonPage }) },
                     ],
                   },
                   {
@@ -253,7 +237,7 @@ export const router = createBrowserRouter([
                     path: 'live',
                     element: <WorkspaceToolGate tool="live" />,
                     children: [
-                      { index: true, loader: () => meetingCalendar.preload().then(() => null), element: <WorkspaceLivePage /> },
+                      { index: true, loader: () => meetingCalendar.preload().then(() => null), lazy: async () => ({ Component: (await import('@/routes/workspace/WorkspaceLivePage')).WorkspaceLivePage }) },
                       { path: ':sessionId', loader: liveSessionLoader, lazy: async () => ({ Component: (await import('@/routes/LiveSessionPage')).LiveSessionPage }) },
                     ],
                   },
@@ -265,7 +249,7 @@ export const router = createBrowserRouter([
                     children: [{ index: true, lazy: async () => ({ Component: (await import('@/routes/workspace/WorkspaceGitHubPage')).WorkspaceGitHubPage }) }],
                   },
                   // Feature tabs that don't exist yet (Exercises); checked against the enabled tools.
-                  { path: ':tab', element: <WorkspaceTabPage /> },
+                  { path: ':tab', lazy: async () => ({ Component: (await import('@/routes/workspace/WorkspaceTabPage')).WorkspaceTabPage }) },
                 ],
               },
             ],
