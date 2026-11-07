@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useAuth } from '@/features/auth/hooks'
 import { createDiagram, teamDiagramsQuery } from '@/features/diagrams/api'
-import { createDocument, teamDocsQuery } from '@/features/docs/api'
+import { createDocument, documentQuery, teamDocsQuery, updateDocument, type Doc } from '@/features/docs/api'
 import { teamIssuesQuery, type IssueStatus, type TeamIssue } from '@/features/issues/api'
 import { DueDatePicker } from '@/features/issues/components/DueDatePicker'
 import { StarButton } from '@/features/issues/components/StarButton'
@@ -30,7 +30,38 @@ import { useCurrentTeam } from '@/features/teams/hooks'
 import { diagramPath, docPath, filesPath, hubPlansPath, issuePath, issuesPath } from '@/features/teams/nav'
 import { errorMessage } from '@/lib/errors'
 import { formatShortDate, timeAgo } from '@/lib/format'
+import { ownSave } from '@/lib/realtime'
 import { cn } from '@/lib/utils'
+import { useOthersTyping } from '@/hooks/use-others-typing'
+import type { Json } from '@/types/database.types'
+
+const BRIEF_PROMPT = 'What is this plan for, and what does done look like? Write it in the Brief.'
+
+function isRecord(value: Json): value is { [key: string]: Json } {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function supportsPlainBriefEdit(body: Json | null) {
+  if (body === null) return true
+  if (!isRecord(body) || body.type !== 'doc' || !Array.isArray(body.content)) return false
+  if (!Object.keys(body).every((key) => key === 'type' || key === 'content')) return false
+  return body.content.every((node) => {
+    if (!isRecord(node) || node.type !== 'paragraph' || !Object.keys(node).every((key) => key === 'type' || key === 'content')) return false
+    if (node.content === undefined) return true
+    return Array.isArray(node.content) && node.content.every(
+      (part) => isRecord(part) && part.type === 'text' && typeof part.text === 'string' && Object.keys(part).every((key) => key === 'type' || key === 'text'),
+    )
+  })
+}
+
+function plainBriefBody(text: string): Json {
+  return {
+    type: 'doc',
+    content: text.split('\n').map((line) =>
+      line ? { type: 'paragraph', content: [{ type: 'text', text: line }] } : { type: 'paragraph' },
+    ),
+  }
+}
 
 /** A quiet property value in the details panel: text that turns into a button for editors. */
 const chip =
@@ -51,8 +82,8 @@ const BAR: [IssueStatus, string][] = [
  * yet (Up for grabs, with Assign to me), its issues by person, and a details panel on the right
  * (progress, status, lead, dates, people, projects) that closes with ✕; it starts open and the choice
  * isn't remembered. Its lead, its creator and group owners/admins edit and delete it; everyone in the
- * group edits its files. Everything comes from the hub's cached lists plus the plan itself: no extra
- * request beyond `planLoader`'s.
+ * group edits its files. The Brief's full text loads only when its inline editor is opened; the page
+ * otherwise uses the hub's cached lists and `planLoader` data.
  */
 export function PlanPage() {
   const { planId = '' } = useParams()
@@ -439,6 +470,76 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
   const [{ data: docs }, { data: boards }] = useSuspenseQueries({ queries: [teamDocsQuery(team.id), teamDiagramsQuery(team.id)] })
   const openBoard = useOpenPlanWhiteboard(team.id)
   const [now] = useState(Date.now)
+  const [editingBrief, setEditingBrief] = useState(false)
+  const [briefDoc, setBriefDoc] = useState<Doc | null>(null)
+  const [briefText, setBriefText] = useState('')
+  const [briefLoadError, setBriefLoadError] = useState<unknown>()
+  const [briefLoading, setBriefLoading] = useState(false)
+  const [savingBrief, setSavingBrief] = useState(false)
+  const { lockedBy, markTyping } = useOthersTyping(
+    `doc:${briefDoc?.id ?? plan.brief_id ?? ''}`,
+    Boolean(editingBrief && (briefDoc?.access_level ?? 0) >= 2),
+  )
+  const editBriefHere = () => {
+    const docId = plan.brief_id
+    if (!docId) return
+    setBriefDoc(null)
+    setBriefText('')
+    setBriefLoadError(undefined)
+    setBriefLoading(true)
+    setEditingBrief(true)
+    void queryClient
+      .fetchQuery(documentQuery(docId))
+      .then((doc) => {
+        if (!doc) throw new Error('This Brief is no longer available.')
+        if (doc.access_level < 2) throw new Error('You have view-only access to this Brief.')
+        if (!supportsPlainBriefEdit(doc.body)) {
+          throw new Error('This Brief has formatting. Cancel and choose Open to edit it without losing that formatting.')
+        }
+        setBriefDoc(doc)
+        setBriefText(doc.content.trim() ? doc.content : BRIEF_PROMPT)
+      })
+      .catch((error: unknown) => {
+        setBriefLoadError(error)
+      })
+      .finally(() => {
+        setBriefLoading(false)
+      })
+  }
+  const cancelBriefEdit = () => {
+    setEditingBrief(false)
+    setBriefLoadError(undefined)
+  }
+  const saveBriefInline = async () => {
+    if (!briefDoc || savingBrief || briefText === (briefDoc.content.trim() ? briefDoc.content : BRIEF_PROMPT)) return
+    setSavingBrief(true)
+    setBriefLoadError(undefined)
+    const body = plainBriefBody(briefText)
+    const saved = ownSave('documents', briefDoc.id)
+    try {
+      const updatedAt = await updateDocument(briefDoc.id, { title: briefDoc.title, body, content: briefText })
+      saved(updatedAt)
+      const savedAt = updatedAt ?? new Date().toISOString()
+      const updatedDoc = { ...briefDoc, body, content: briefText, updated_at: savedAt }
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: documentQuery(briefDoc.id).queryKey, exact: true }),
+        queryClient.cancelQueries({ queryKey: planKeys.detail(plan.id), exact: true }),
+      ])
+      queryClient.setQueryData(documentQuery(briefDoc.id).queryKey, updatedDoc)
+      queryClient.setQueryData<PlanDetail | null>(planKeys.detail(plan.id), (old) =>
+        old ? { ...old, brief: { content: briefText, updated_at: savedAt } } : old,
+      )
+      void queryClient.invalidateQueries({ queryKey: planKeys.team(team.id) })
+      setBriefDoc(updatedDoc)
+      setEditingBrief(false)
+    } catch (error) {
+      saved()
+      setBriefLoadError(error)
+      toast.error(errorMessage(error))
+    } finally {
+      setSavingBrief(false)
+    }
+  }
   const create = useMutation({
     mutationFn: async (kind: 'doc' | 'diagram') => {
       const input = { teamId: team.id, workspaceId: null, folderId: plan.folder_id, title: kind === 'doc' ? 'Untitled doc' : 'Untitled whiteboard' }
@@ -459,7 +560,33 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
   // Enough text for 4 lines; the card cuts it there (owner's choice) and the rest is one click away.
   const preview = plan.brief?.content.trim().replace(/\s+/g, ' ').slice(0, 600) || undefined
   const items: StackItem[] = [
-    ...(plan.brief_id ? [{ key: plan.brief_id, kind: 'brief' as const, title: brief?.title ?? 'Brief', preview, meta: updated(plan.brief?.updated_at ?? brief?.updated_at ?? plan.updated_at), to: docPath(team.slug, plan.brief_id) }] : []),
+    ...(plan.brief_id
+      ? [{
+          key: plan.brief_id,
+          kind: 'brief' as const,
+          title: brief?.title ?? 'Brief',
+          preview,
+          meta: updated(plan.brief?.updated_at ?? brief?.updated_at ?? plan.updated_at),
+          to: docPath(team.slug, plan.brief_id),
+          edit: { onClick: editBriefHere },
+          ...(editingBrief
+            ? {
+                quickEdit: {
+                  value: briefText,
+                  onChange: setBriefText,
+                  onSave: () => void saveBriefInline(),
+                  onCancel: cancelBriefEdit,
+                  loading: briefLoading,
+                  saving: savingBrief,
+                  canSave: Boolean(briefDoc) && briefText !== (briefDoc?.content.trim() ? briefDoc.content : BRIEF_PROMPT) && !lockedBy.length,
+                  error: briefLoadError ? errorMessage(briefLoadError) : undefined,
+                  lockedBy,
+                  onTyping: markTyping,
+                },
+              }
+            : {}),
+        }]
+      : []),
     ...(board ? [{ key: board.id, kind: 'whiteboard' as const, title: board.title, meta: updated(board.updated_at), to: diagramPath(team.slug, board.id) }] : []),
     ...[
       ...docs.filter((d) => d.folder_id === plan.folder_id && d.id !== plan.brief_id).map((d) => ({ key: d.id, kind: 'doc' as const, title: d.title, meta: updated(d.updated_at), to: docPath(team.slug, d.id), at: d.updated_at })),
@@ -469,36 +596,38 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
   if (items.length === 0) return null
 
   return (
-    <FileStack
-      items={items}
-      extra={
-        !board && (
-          <button
-            type="button"
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-dashed px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-            disabled={openBoard.isPending}
-            onClick={() => openBoard.mutate(plan.id, { onSuccess: (id) => void navigate(diagramPath(team.slug, id)) })}
-          >
-            <Presentation className="size-3.5" /> Start the whiteboard
-          </button>
-        )
-      }
-      newMenu={
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <NewFileButton disabled={create.isPending} />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={() => create.mutate('doc')}>
-              <FileText /> Doc
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => create.mutate('diagram')}>
-              <Presentation /> Whiteboard
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      }
-    />
+    <>
+      <FileStack
+        items={items}
+        extra={
+          !board && (
+            <button
+              type="button"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-dashed px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+              disabled={openBoard.isPending}
+              onClick={() => openBoard.mutate(plan.id, { onSuccess: (id) => void navigate(diagramPath(team.slug, id)) })}
+            >
+              <Presentation className="size-3.5" /> Start the whiteboard
+            </button>
+          )
+        }
+        newMenu={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <NewFileButton disabled={create.isPending} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => create.mutate('doc')}>
+                <FileText /> Doc
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => create.mutate('diagram')}>
+                <Presentation /> Whiteboard
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+      />
+    </>
   )
 }
 

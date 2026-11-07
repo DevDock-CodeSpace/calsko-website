@@ -20,13 +20,11 @@ import { APP_ROUTE_ID, appLoader } from '@/layouts/app-loader'
 import { queryClient } from '@/lib/query-client'
 import { DiagramPage } from '@/routes/DiagramPage'
 import { DocPage } from '@/routes/DocPage'
-import { MessagesPage } from '@/routes/team/MessagesPage'
 import { FULL_BLEED } from '@/layouts/full-bleed'
 import { NotFoundPage, RouteErrorPage } from '@/routes/NotFoundPage'
 import { OnboardingPage } from '@/routes/OnboardingPage'
 import { IssuesHubLayout } from '@/routes/team/IssuesHubLayout'
 import { TeamLivePage } from '@/routes/team/TeamLivePage'
-import { TeamMembersPage } from '@/routes/team/TeamMembersPage'
 import { TeamWorkspacesPage } from '@/routes/team/TeamWorkspacesPage'
 import { IssueCyclePage } from '@/routes/workspace/IssueCyclePage'
 import { IssueCyclesPage } from '@/routes/workspace/IssueCyclesPage'
@@ -36,7 +34,6 @@ import { WorkspaceLearningPage } from '@/routes/workspace/WorkspaceLearningPage'
 import { WorkspaceLivePage } from '@/routes/workspace/WorkspaceLivePage'
 import { WorkspaceIssuesPage } from '@/routes/workspace/WorkspaceIssuesPage'
 import { WorkspaceLayout } from '@/routes/workspace/WorkspaceLayout'
-import { WorkspaceMembersPage } from '@/routes/workspace/WorkspaceMembersPage'
 import { WorkspaceOverviewPage } from '@/routes/workspace/WorkspaceOverviewPage'
 import { WorkspaceTabPage } from '@/routes/workspace/WorkspaceTabPage'
 import { WorkspaceToolGate } from '@/routes/workspace/WorkspaceToolGate'
@@ -141,10 +138,10 @@ export const router = createBrowserRouter([
             children: [
               { index: true, element: <TeamWorkspacesPage /> },
               // The open conversation's view (TipTap composer) starts downloading with the page, so it renders at once.
-              { path: 'messages', handle: FULL_BLEED, loader: messagesLoader, element: <MessagesPage /> },
+              { path: 'messages', handle: FULL_BLEED, loader: messagesLoader, lazy: async () => ({ Component: (await import('@/routes/team/MessagesPage')).MessagesPage }) },
               // Where the group opens (after sign-in, or switching group or collection): its loader redirects.
               { path: 'start', loader: teamStartLoader },
-              { path: 'members', loader: teamMembersLoader, element: <TeamMembersPage /> },
+              { path: 'members', loader: teamMembersLoader, lazy: async () => ({ Component: (await import('@/routes/team/TeamMembersPage')).TeamMembersPage }) },
               { path: 'settings', lazy: async () => ({ Component: (await import('@/routes/team/TeamSettingsPage')).TeamSettingsPage }) },
               // Team → Files (URL docs): group-wide docs and diagrams + those of every workspace the user can see.
               // Lazy page; filesLoader starts its queries alongside the chunk.
@@ -191,7 +188,7 @@ export const router = createBrowserRouter([
                 element: <WorkspaceLayout />,
                 children: [
                   { index: true, element: <WorkspaceOverviewPage /> },
-                  { path: 'members', element: <WorkspaceMembersPage /> },
+                  { path: 'members', lazy: async () => ({ Component: (await import('@/routes/workspace/WorkspaceMembersPage')).WorkspaceMembersPage }) },
                   {
                     path: 'settings',
                     children: [

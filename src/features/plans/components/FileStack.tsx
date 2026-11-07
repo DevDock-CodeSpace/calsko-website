@@ -1,4 +1,4 @@
-import { ArrowUpRight, ChevronLeft, ChevronRight, Copy, FileText, Plus, Presentation } from 'lucide-react'
+import { ArrowUpRight, ChevronLeft, ChevronRight, Copy, FileText, Pencil, Plus, Presentation } from 'lucide-react'
 import { useRef, useState, type KeyboardEvent, type ReactNode, type WheelEvent } from 'react'
 import { Link } from 'react-router'
 import { toast } from 'sonner'
@@ -12,6 +12,19 @@ export type StackItem = {
   preview?: string
   meta: string
   to: string
+  edit?: { onClick: () => void }
+  quickEdit?: {
+    value: string
+    onChange: (value: string) => void
+    onSave: () => void
+    onCancel: () => void
+    loading: boolean
+    saving: boolean
+    canSave: boolean
+    error?: string
+    lockedBy?: string[]
+    onTyping?: () => void
+  }
 }
 
 const KIND: Record<StackItem['kind'], { label: string; icon: typeof FileText; chip: string; dot: string }> = {
@@ -33,6 +46,7 @@ export function FileStack({ items, extra, newMenu }: { items: StackItem[]; extra
   const go = (i: number) => setActive(Math.max(0, Math.min(items.length - 1, i)))
 
   const onWheel = (e: WheelEvent) => {
+    if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return
     // Only a sideways swipe moves it; scrolling the page stays the page's.
     if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) || Math.abs(e.deltaX) < 6) return
     const now = Date.now()
@@ -41,6 +55,7 @@ export function FileStack({ items, extra, newMenu }: { items: StackItem[]; extra
     go(at + (e.deltaX > 0 ? 1 : -1))
   }
   const onKeyDown = (e: KeyboardEvent) => {
+    if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return
     if (e.key === 'ArrowRight') go(at + 1)
     else if (e.key === 'ArrowLeft') go(at - 1)
     else return
@@ -114,20 +129,85 @@ export function FileStack({ items, extra, newMenu }: { items: StackItem[]; extra
                 </button>
               </div>
               <h3 className="mt-3.5 truncate text-lg font-semibold tracking-tight">{item.title}</h3>
-              <p className={cn('mt-1.5 line-clamp-4 text-sm leading-relaxed', item.preview ? 'text-muted-foreground' : 'text-muted-foreground/70 italic')}>
-                {item.preview ?? (item.kind === 'brief' ? 'What is this plan for, and what does done look like? Write it in the Brief.' : `A ${kind.label.toLowerCase()} in this plan’s folder.`)}
-              </p>
-              <span className="flex-1" />
+              {item.quickEdit ? (
+                <div className="mt-1.5 flex min-h-0 flex-1 flex-col gap-1">
+                  {item.quickEdit.loading ? (
+                    <p className="py-2 text-sm text-muted-foreground">Opening Brief…</p>
+                  ) : item.quickEdit.error ? (
+                    <p role="alert" className="py-2 text-sm text-destructive">{item.quickEdit.error}</p>
+                  ) : (
+                    <>
+                      {item.quickEdit.lockedBy && item.quickEdit.lockedBy.length > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          {item.quickEdit.lockedBy.join(', ')} {item.quickEdit.lockedBy.length === 1 ? 'is' : 'are'} editing the Brief.
+                        </p>
+                      )}
+                      <textarea
+                        aria-label="Brief text"
+                        autoFocus
+                        value={item.quickEdit.value}
+                        readOnly={Boolean(item.quickEdit.lockedBy?.length)}
+                        onChange={(event) => {
+                          item.quickEdit?.onChange(event.target.value)
+                          item.quickEdit?.onTyping?.()
+                        }}
+                        className="min-h-16 w-full flex-1 resize-none rounded-md border bg-background px-2 py-1.5 text-sm leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-brand/40 read-only:opacity-70"
+                      />
+                    </>
+                  )}
+                </div>
+              ) : (
+                <p className={cn('mt-1.5 line-clamp-4 text-sm leading-relaxed', item.preview ? 'text-muted-foreground' : 'text-muted-foreground/70 italic')}>
+                  {item.preview ?? (item.kind === 'brief' ? 'What is this plan for, and what does done look like? Write it in the Brief.' : `A ${kind.label.toLowerCase()} in this plan’s folder.`)}
+                </p>
+              )}
+              {!item.quickEdit && <span className="flex-1" />}
               <div className="flex items-center gap-2.5 border-t pt-3">
                 <span className={cn('size-1.5 rounded-full', kind.dot)} />
                 <span className="flex-1 truncate font-mono text-xs text-muted-foreground">{item.meta}</span>
-                <Link
-                  to={item.to}
-                  tabIndex={d === 0 ? 0 : -1}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-                >
-                  Open <ArrowUpRight className="size-3.5" />
-                </Link>
+                {item.quickEdit ? (
+                  <>
+                    <button
+                      type="button"
+                      tabIndex={d === 0 ? 0 : -1}
+                      disabled={item.quickEdit.saving}
+                      onClick={item.quickEdit.onCancel}
+                      className="inline-flex h-8 items-center rounded-lg border px-2.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      tabIndex={d === 0 ? 0 : -1}
+                      disabled={!item.quickEdit.canSave || item.quickEdit.saving}
+                      onClick={item.quickEdit.onSave}
+                      className="inline-flex h-8 items-center rounded-lg bg-brand px-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                    >
+                      {item.quickEdit.saving ? 'Saving…' : 'Save'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {item.edit && (
+                      <button
+                        type="button"
+                        aria-label={`Edit ${item.title} here`}
+                        tabIndex={d === 0 ? 0 : -1}
+                        onClick={item.edit.onClick}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors hover:bg-muted"
+                      >
+                        <Pencil className="size-3.5" /> Edit here
+                      </button>
+                    )}
+                    <Link
+                      to={item.to}
+                      tabIndex={d === 0 ? 0 : -1}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                    >
+                      Open <ArrowUpRight className="size-3.5" />
+                    </Link>
+                  </>
+                )}
               </div>
               {d !== 0 && (
                 <button type="button" aria-label={`Show ${item.title}`} onClick={() => go(i)} className="absolute inset-0 cursor-pointer rounded-[18px]" />

@@ -178,6 +178,22 @@ function lessonFileAdded(change: Change): QueryKey[] {
   return change.eventType === 'INSERT' && lesson ? [['learning', 'lesson', lesson]] : []
 }
 
+/** A Brief's text appears in its plan detail and the plans list excerpt. */
+function briefPlanQueries(change: Change): QueryKey[] {
+  const docId = id(rowOf(change).id)
+  if (!docId) return []
+  const hasBrief = (row: unknown) =>
+    typeof row === 'object' && row !== null && 'brief_id' in row && row.brief_id === docId
+  return queryClient
+    .getQueryCache()
+    .findAll({ queryKey: ['plans'] })
+    .flatMap((query) => {
+      const data = query.state.data
+      const rows = Array.isArray(data) ? data : [data]
+      return rows.some(hasBrief) ? [query.queryKey] : []
+    })
+}
+
 const AFFECTS: Record<string, QueryKey[] | ((change: Change) => QueryKey[])> = {
   teams: [['teams']],
   team_members: [['teams'], ['workspaces']],
@@ -189,6 +205,7 @@ const AFFECTS: Record<string, QueryKey[] | ((change: Change) => QueryKey[])> = {
   documents: (change) => [
     ...rowQueries(change, DOC_LISTS, (row) => (id(row.id) ? ['documents', id(row.id)] : undefined), [['documents']], true),
     ...lessonFileAdded(change),
+    ...briefPlanQueries(change),
   ],
   doc_folders: [['documents', 'folders']],
   diagrams: (change) => [

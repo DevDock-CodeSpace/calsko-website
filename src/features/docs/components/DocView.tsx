@@ -120,20 +120,23 @@ export default function DocView({
     const renamed = nextTitle !== synced.current.title
     // Our own change: this view updates its cache below, so the echo needn't refetch it.
     const saved = ownSave('documents', doc.id)
+    let updatedAt: string | undefined
     try {
-      saved(await updateDocument(doc.id, { title: nextTitle, body, content }))
+      updatedAt = await updateDocument(doc.id, { title: nextTitle, body, content })
+      saved(updatedAt)
     } catch (error) {
       saved()
       setStatus('error')
       throw error
     }
+    const savedAt = updatedAt ?? new Date().toISOString()
     savedVersion.current = target
     synced.current = { title: nextTitle, body }
     // A refetch that started before this save still carries the old body: drop it.
     void queryClient.cancelQueries({ queryKey: documentQuery(doc.id).queryKey, exact: true })
     // Keep the cached doc in sync without refetching the (possibly large) body.
     queryClient.setQueryData(documentQuery(doc.id).queryKey, (old) =>
-      old ? { ...old, title: nextTitle, body, content, updated_at: new Date().toISOString() } : old,
+      old ? { ...old, title: nextTitle, body, content, updated_at: savedAt } : old,
     )
     // Lists show the title, not the text: only a rename needs them asked for again.
     if (renamed) {
