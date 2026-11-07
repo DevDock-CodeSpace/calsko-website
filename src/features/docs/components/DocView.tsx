@@ -4,7 +4,7 @@ import DragHandle from '@tiptap/extension-drag-handle-react'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import { ArrowLeft, ChevronRight, GripVertical, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { Link, useBlocker, useNavigate, useParams } from 'react-router'
+import { Link, useBlocker, useLocation, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { OthersTypingAlert } from '@/components/OthersTypingAlert'
@@ -31,6 +31,7 @@ import {
 import { adoptContent } from '../editor/adopt'
 import { docExtensions } from '../editor/extensions'
 import { folderPath } from '../folders'
+import { readFilesLocationState } from '../files-navigation'
 import { FormatBubble } from '../editor/FormatBubble'
 import { FileLinkPicker } from '../editor/FileLinkPicker'
 import { InsertMenu } from '../editor/InsertMenu'
@@ -72,11 +73,12 @@ export default function DocView({
   const { team } = useCurrentTeam()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const location = useLocation()
   const [now] = useState(Date.now)
   const listPath = docsPath(team.slug, workspaceId)
   const folderLink = (folderId: string | null) => (folderId ? `${listPath}?folder=${folderId}` : listPath)
-  // Back (and after deleting): the folder the doc is in.
-  const backTo = folderLink(doc.folder_id)
+  const filesState = readFilesLocationState(location.state, listPath)
+  const backTo = filesState?.filesReturnTo ?? folderLink(doc.folder_id)
 
   // ------------------------------------------------------------ autosave
   const [title, setTitle] = useState(doc.title)
@@ -257,7 +259,7 @@ export default function DocView({
       toast.success(`${doc.title} was deleted`)
       // Leave the page before dropping its data (see useExitTeam for why).
       leaving.current = true
-      await navigate(backTo, { replace: true })
+      await navigate(backTo, { replace: true, state: filesState ?? undefined })
       queryClient.removeQueries({ queryKey: ['documents', doc.id] })
       // Only the lists showed it.
       await Promise.all([
@@ -369,7 +371,7 @@ export default function DocView({
     <div className="pl-6 md:pl-16" onKeyDown={onKeyDown}>
       <div className="mb-8 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
-          <FolderPathNav doc={doc} listPath={listPath} folderLink={folderLink} />
+          <FolderPathNav doc={doc} listPath={listPath} folderLink={folderLink} filesState={filesState} />
           {/* In a workspace the scope is obvious from the tabs above. */}
           {!workspaceId && (
             <>
@@ -473,11 +475,21 @@ function SaveIndicator({ status }: { status: SaveStatus }) {
 }
 
 /** "← Files › Week 1 › Notes": the doc's folders (fetched here, so an embedded doc doesn't ask for them). */
-function FolderPathNav({ doc, listPath, folderLink }: { doc: Doc; listPath: string; folderLink: (folderId: string | null) => string }) {
+function FolderPathNav({
+  doc,
+  listPath,
+  folderLink,
+  filesState,
+}: {
+  doc: Doc
+  listPath: string
+  folderLink: (folderId: string | null) => string
+  filesState: ReturnType<typeof readFilesLocationState>
+}) {
   const folders = useSuspenseQuery(foldersQuery(doc.team_id, doc.workspace_id)).data
   return (
     <nav aria-label="Folder path" className="flex min-w-0 items-center gap-1">
-      <Link to={listPath} className="inline-flex shrink-0 items-center gap-1 hover:text-foreground">
+      <Link to={filesState?.filesReturnTo ?? listPath} state={filesState ?? undefined} className="inline-flex shrink-0 items-center gap-1 hover:text-foreground">
         <ArrowLeft className="size-3.5" /> Files
       </Link>
       {folderPath(doc.folder_id, folders).map((folder) => (

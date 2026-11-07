@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient, useSuspenseQueries, useSuspenseQuery } from '@tanstack/react-query'
 import { ArrowDown, ArrowUp, ChevronDown, Clock, FileText, Folder, Globe, Layers, Plus, Search, Presentation, X, type LucideIcon } from 'lucide-react'
 import { Suspense, useState, type ReactNode } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { Link, useLocation, useSearchParams } from 'react-router'
 import { PersonAvatar } from '@/components/PersonRow'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -18,6 +18,7 @@ import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { foldersQuery, teamDocsQuery, type DocFolder, type DocSummary } from '../api'
 import { folderPath } from '../folders'
+import { readFilesLocationState } from '../files-navigation'
 import { useCanEditDocs, useCanWriteDocs } from '../hooks'
 import { CreateDocDialog } from './CreateDocDialog'
 import { DocBrowser } from './DocBrowser'
@@ -63,6 +64,9 @@ export function FilesView({
   const canEdit = useCanEditDocs()
   const queryClient = useQueryClient()
   const [params, setParams] = useSearchParams()
+  const location = useLocation()
+  const filesReturnTo = `${location.pathname}${location.search}`
+  const filesState = readFilesLocationState(location.state, location.pathname)
   const { workspaces, inView } = useCollectionView()
   const spaces: Space[] = workspace ? [workspace] : workspaces.filter((w) => hasFiles(w.modules)).sort((a, b) => a.title.localeCompare(b.title))
 
@@ -170,6 +174,8 @@ export function FilesView({
             canWrite={canWrite(placeWorkspace ?? null)}
             canCreate={canEdit(placeWorkspace ?? null)}
             hrefFor={hrefFor}
+            filesReturnTo={filesReturnTo}
+            filesState={filesState}
             rootLabel={space?.title ?? 'Group-wide'}
             empty={space ? `Nothing in ${space.title} yet.` : 'Nothing group-wide yet. Create a doc, a whiteboard or a folder.'}
           />
@@ -183,6 +189,8 @@ export function FilesView({
           ]}
           placeWorkspace={placeWorkspace}
           hrefFor={hrefFor}
+          filesReturnTo={filesReturnTo}
+          filesState={filesState}
           canNewDoc={view !== 'diagrams' && canNewDoc}
           canNewDiagram={view !== 'docs' && canNewDiagram}
           canWrite={canWrite}
@@ -248,6 +256,8 @@ function PlaceSelect({
 function PlaceFiles({
   workspaceId,
   hrefFor,
+  filesReturnTo,
+  filesState,
   ...props
 }: {
   workspaceId: string | null
@@ -258,6 +268,8 @@ function PlaceFiles({
   canWrite: boolean
   canCreate: boolean
   hrefFor: (kind: 'doc' | 'diagram', item: DocSummary) => string
+  filesReturnTo: string
+  filesState: ReturnType<typeof readFilesLocationState>
   rootLabel?: string
   empty: string
 }) {
@@ -274,6 +286,8 @@ function PlaceFiles({
       diagrams={props.diagramsEnabled ? props.diagrams : []}
       docHref={(doc) => hrefFor('doc', doc)}
       diagramHref={(diagram) => hrefFor('diagram', diagram)}
+      filesReturnTo={filesReturnTo}
+      filesState={filesState}
     />
   )
 }
@@ -288,6 +302,8 @@ function FlatList({
   rows,
   placeWorkspace,
   hrefFor,
+  filesReturnTo,
+  filesState,
   canNewDoc,
   canNewDiagram,
   canWrite,
@@ -296,6 +312,8 @@ function FlatList({
   rows: Row[]
   placeWorkspace: string | null | undefined
   hrefFor: (kind: 'doc' | 'diagram', item: DocSummary) => string
+  filesReturnTo: string
+  filesState: ReturnType<typeof readFilesLocationState>
   canNewDoc: boolean
   canNewDiagram: boolean
   /** Who may move and delete in a place (writers); the database re-checks. */
@@ -304,8 +322,8 @@ function FlatList({
   const { team } = useCurrentTeam()
   const { user } = useAuth()
   const [now] = useState(Date.now)
-  const [query, setQuery] = useState('')
-  const [sort, setSort] = useState<{ by: 'updated' | 'name'; dir: 'asc' | 'desc' }>({ by: 'updated', dir: 'desc' })
+  const [query, setQuery] = useState(filesState?.filesSearch ?? '')
+  const [sort, setSort] = useState(filesState?.filesSort ?? { by: 'updated', dir: 'desc' })
   const [creating, setCreating] = useState<'doc' | 'diagram' | null>(null)
   // In one place, rows say which folder they're in (that place's folders, usually cached already).
   const folders: DocFolder[] =
@@ -410,7 +428,11 @@ function FlatList({
                     <Icon className="size-4 text-muted-foreground" />
                   </span>
                   <span className="flex min-w-0 flex-col">
-                    <Link to={hrefFor(kind, item)} className="min-w-0 truncate text-sm font-medium outline-none after:absolute after:inset-0">
+                    <Link
+                      to={hrefFor(kind, item)}
+                      state={{ filesReturnTo, filesSearch: query, filesSort: sort }}
+                      className="min-w-0 truncate text-sm font-medium outline-none after:absolute after:inset-0"
+                    >
                       {item.title}
                     </Link>
                     <span className="flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground">

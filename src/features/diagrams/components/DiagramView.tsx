@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, ChevronRight, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useBlocker, useNavigate, useParams } from 'react-router'
+import { Link, useBlocker, useLocation, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { OthersTypingAlert } from '@/components/OthersTypingAlert'
@@ -10,6 +10,7 @@ import { foldersQuery } from '@/features/docs/api'
 import { DocScope } from '@/features/docs/components/DocScope'
 import { ShareButton } from '@/features/docs/components/ShareButton'
 import { folderPath } from '@/features/docs/folders'
+import { readFilesLocationState } from '@/features/docs/files-navigation'
 import { useCurrentTeam } from '@/features/teams/hooks'
 import { useOthersTyping } from '@/hooks/use-others-typing'
 import { filesPath } from '@/features/teams/nav'
@@ -38,14 +39,16 @@ export default function DiagramView({ diagram, canWrite, embedded = false }: { d
   const { team } = useCurrentTeam()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const location = useLocation()
   const [now] = useState(Date.now)
   const listPath = filesPath(team.slug, workspaceId)
+  const filesState = readFilesLocationState(location.state, listPath)
   // Folders are asked for only when the diagram is in one (most aren't); the path fills in when they arrive.
   const folders = useQuery({ ...foldersQuery(diagram.team_id, diagram.workspace_id), enabled: diagram.folder_id !== null }).data ?? []
   const path = folderPath(diagram.folder_id, folders)
   const folderLink = (folderId: string | null) => filesPath(team.slug, workspaceId, { folder: folderId })
   // Back (and after deleting): the folder the diagram is in, in Files.
-  const backTo = folderLink(diagram.folder_id)
+  const backTo = filesState?.filesReturnTo ?? folderLink(diagram.folder_id)
   const [initial, setInitial] = useState(() => parse(diagram.data))
 
   // ------------------------------------------------------------ autosave
@@ -199,7 +202,7 @@ export default function DiagramView({ diagram, canWrite, embedded = false }: { d
       toast.success(`${diagram.title} was deleted`)
       // Leave the page before dropping its data (see useExitTeam for why).
       leaving.current = true
-      await navigate(backTo, { replace: true })
+      await navigate(backTo, { replace: true, state: filesState ?? undefined })
       queryClient.removeQueries({ queryKey: ['diagrams', diagram.id] })
       // Only the lists showed it.
       await Promise.all([
@@ -236,7 +239,7 @@ export default function DiagramView({ diagram, canWrite, embedded = false }: { d
       /* One slim row: back to Files (and the folder) · title · where and when · saved · delete. */
       <header className="flex h-12 shrink-0 items-center gap-3 border-b px-3 md:px-4">
         <nav aria-label="Folder path" className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-          <Link to={listPath} className="inline-flex items-center gap-1 rounded-sm hover:text-foreground">
+          <Link to={filesState?.filesReturnTo ?? listPath} state={filesState ?? undefined} className="inline-flex items-center gap-1 rounded-sm hover:text-foreground">
             <ArrowLeft className="size-3.5" /> Files
           </Link>
           {path.map((folder) => (
