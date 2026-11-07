@@ -12,7 +12,7 @@ import { issuePath } from '@/features/teams/nav'
 import type { Json } from '@/types/database.types'
 import { createIssue, issueKeys, type Issue, type IssuePriority, type IssueStatus } from '../api'
 import { cycleTitle } from '../cycles'
-import { useIssueContext } from '../hooks'
+import { useIssueContext, useIssueContextForWorkspace } from '../hooks'
 import { imageNode, removeIssueImages, uploadIssueImage } from '../images'
 import { issueIdentifier, priorityLabel, statusLabel } from '../meta'
 import { AssigneePicker } from './AssigneePicker'
@@ -62,16 +62,30 @@ type CreateIssueDialogProps = {
 }
 
 /** Linear's "New issue" modal: title, description, and property chips. ⌘/Ctrl+Enter creates. */
-export function CreateIssueDialog({
+export function CreateIssueDialog(props: CreateIssueDialogProps) {
+  const context = useIssueContext()
+  return <CreateIssueDialogForm {...props} context={context} />
+}
+
+export function CreateIssueDialogForWorkspace({
+  workspaceId,
+  ...props
+}: CreateIssueDialogProps & { workspaceId: string }) {
+  const context = useIssueContextForWorkspace(workspaceId)
+  return <CreateIssueDialogForm {...props} context={context} />
+}
+
+function CreateIssueDialogForm({
   open,
   onOpenChange,
   status: initialStatus = 'todo',
   parent,
   cycleId: initialCycle = null,
   planId: initialPlan = null,
-}: CreateIssueDialogProps) {
+  context,
+}: CreateIssueDialogProps & { context: ReturnType<typeof useIssueContext> }) {
   const { team } = useCurrentTeam()
-  const { workspace, members, labels, cycles, repos, plans, canManage, userId } = useIssueContext()
+  const { workspace, members, labels, cycles, repos, plans, canManage, userId } = context
   const queryClient = useQueryClient()
   const navigate = useNavigate()
 
