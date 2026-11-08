@@ -18,7 +18,6 @@ import { messagesLoader } from '@/features/messaging/loaders'
 import { AppLayout } from '@/layouts/AppLayout'
 import { APP_ROUTE_ID, appLoader } from '@/layouts/app-loader'
 import { queryClient } from '@/lib/query-client'
-import { MessagesPage } from '@/routes/team/MessagesPage'
 import { FULL_BLEED } from '@/layouts/full-bleed'
 import { NotFoundPage, RouteErrorPage } from '@/routes/NotFoundPage'
 import { WorkspaceLayout } from '@/routes/workspace/WorkspaceLayout'
@@ -123,7 +122,7 @@ export const router = createBrowserRouter([
             children: [
               { index: true, lazy: async () => ({ Component: (await import('@/routes/team/TeamWorkspacesPage')).TeamWorkspacesPage }) },
               // The open conversation's view (TipTap composer) starts downloading with the page, so it renders at once.
-              { path: 'messages', handle: FULL_BLEED, loader: messagesLoader, element: <MessagesPage /> },
+              { path: 'messages', handle: FULL_BLEED, loader: messagesLoader, lazy: async () => ({ Component: (await import('@/routes/team/MessagesPage')).MessagesPage }) },
               // Where the group opens (after sign-in, or switching group or collection): its loader redirects.
               { path: 'start', loader: teamStartLoader },
               { path: 'members', loader: teamMembersLoader, lazy: async () => ({ Component: (await import('@/routes/team/TeamMembersPage')).TeamMembersPage }) },
