@@ -12,8 +12,9 @@ import { useAuth } from '@/features/auth/hooks'
 import { createDiagram, teamDiagramsQuery } from '@/features/diagrams/api'
 import { createDocument, teamDocsQuery } from '@/features/docs/api'
 import { teamIssuesQuery, type IssueStatus, type TeamIssue } from '@/features/issues/api'
-import { CreateIssueDialogForWorkspace } from '@/features/issues/components/CreateIssueDialog'
 import { DueDatePicker } from '@/features/issues/components/DueDatePicker'
+import type { CreateIssueDialogProps } from '@/features/issues/components/CreateIssueDialog'
+import type { HubProject } from '@/features/issues/hub/hooks'
 import { StarButton } from '@/features/issues/components/StarButton'
 import { TeamIssueRow } from '@/features/issues/components/TeamIssueRow'
 import { useHubProjects } from '@/features/issues/hub/hooks'
@@ -33,6 +34,13 @@ import { diagramPath, docPath, filesPath, hubPlansPath, issuePath } from '@/feat
 import { errorMessage } from '@/lib/errors'
 import { formatShortDate, timeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { preloadable } from '@/lib/preloadable'
+
+const PlanCreateIssueDialog = preloadable<CreateIssueDialogProps & { project: HubProject }>(() =>
+  import('@/features/issues/components/CreateIssueDialogForWorkspace').then((module) => ({
+    default: module.CreateIssueDialogForWorkspace,
+  })),
+)
 
 /** A quiet property value in the details panel: text that turns into a button for editors. */
 const chip =
@@ -109,6 +117,7 @@ function PlanDetails({ plan, issues, people, plans, canEdit }: { plan: PlanDetai
     setIssueWorkspaceId(workspaceId)
     setNewIssueOpen(true)
   }
+  const issueProject = projects.find((project) => project.id === issueWorkspaceId)
   const lead = people.find((p) => p.user_id === plan.lead_id)
   const free = issues.filter((i) => !i.assignee_id && !isClosed(i.status)).sort(compareIssues)
   const canTake = (issue: TeamIssue) => projects.find((p) => p.id === issue.workspace.id)?.canTake ?? false
@@ -288,7 +297,7 @@ function PlanDetails({ plan, issues, people, plans, canEdit }: { plan: PlanDetai
           onSelect={chooseProject}
         />
       )}
-      {issueWorkspaceId && (
+      {issueProject && (
         <Suspense
           fallback={
             <Dialog open={newIssueOpen} onOpenChange={setNewIssueOpen}>
@@ -301,9 +310,9 @@ function PlanDetails({ plan, issues, people, plans, canEdit }: { plan: PlanDetai
             </Dialog>
           }
         >
-          <CreateIssueDialogForWorkspace
-            key={`${issueWorkspaceId}-${newIssueOpen ? 'open' : 'closed'}`}
-            workspaceId={issueWorkspaceId}
+          <PlanCreateIssueDialog.Component
+            key={`${issueProject.id}-${newIssueOpen ? 'open' : 'closed'}`}
+            project={issueProject}
             open={newIssueOpen}
             planId={plan.id}
             onOpenChange={setNewIssueOpen}
@@ -468,11 +477,9 @@ function DateChip({ label, value, canEdit, onChange }: { label: string; value: s
   }
   return (
     <DueDatePicker value={value} onChange={onChange}>
-      {(open) => (
-        <button type="button" className={cn(chip, !value && 'text-muted-foreground')} aria-label={`${label} date: ${text}`} onClick={open}>
-          <CalendarDays className="size-3.5 shrink-0 text-muted-foreground" /> {text}
-        </button>
-      )}
+      <button type="button" className={cn(chip, !value && 'text-muted-foreground')} aria-label={`${label} date: ${text}`}>
+        <CalendarDays className="size-3.5 shrink-0 text-muted-foreground" /> {text}
+      </button>
     </DueDatePicker>
   )
 }

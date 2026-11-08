@@ -1,12 +1,8 @@
 import { lazy, Suspense } from 'react'
 import { useCurrentTeam } from '@/features/teams/hooks'
+import { loadFeedbackDialog } from './feedbackDialogLoader'
 
-// The form loads only when wanted: pointing at "Send feedback" in the profile menu starts it.
-const loadDialog = () => import('./FeedbackDialog')
-const FeedbackDialog = lazy(() => loadDialog().then((m) => ({ default: m.FeedbackDialog })))
-
-/** Starts loading the Feedback form's code (call on hover or focus of whatever opens it). */
-export const preloadFeedbackDialog = () => void loadDialog()
+const FeedbackDialog = lazy(() => loadFeedbackDialog().then((m) => ({ default: m.FeedbackDialog })))
 
 /**
  * The Feedback form, opened from the profile menu (`UserMenu`): tell the Calsko team about a problem or an idea.

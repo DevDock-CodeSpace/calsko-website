@@ -8,6 +8,7 @@ import { myWorkspaceRolesQuery, teamCollectionsQuery } from '@/features/workspac
 export type HubProject = {
   id: string
   title: string
+  issue_key: string
   /** A lead here, or a group owner/admin. */
   canManage: boolean
   /** In the project, so its issues can be assigned to you (private.has_workspace_access). */
@@ -33,6 +34,6 @@ export function useHubProjects(): HubProject[] {
     (w.access === 'collection' && collections.some((c) => c.id === w.collection_id && c.memberIds.includes(user.id)))
   return workspaces
     .filter((w) => w.modules.includes('issues'))
-    .map((w) => ({ id: w.id, title: w.title, canManage: workspacePermissions(role, roles[w.id]).canEdit, canTake: inProject(w) }))
+    .map((w) => ({ id: w.id, title: w.title, issue_key: w.issue_key, canManage: workspacePermissions(role, roles[w.id]).canEdit, canTake: inProject(w) }))
     .sort((a, b) => a.title.localeCompare(b.title))
 }

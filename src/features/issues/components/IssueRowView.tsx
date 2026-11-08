@@ -229,21 +229,18 @@ export function IssueRowView({
       </span>
       {issue.due_date && (
         <DueDatePicker value={issue.due_date} onChange={(due_date) => update({ due_date })}>
-          {(open) => (
-            <button
-              type="button"
-              onClick={open}
-              aria-label={`Due date: ${formatShortDate(issue.due_date!)}`}
-              className={cn(
-                'relative z-10 hidden shrink-0 items-center rounded-sm border px-1.5 font-mono text-[11px] hover:bg-muted focus-visible:ring-2 focus-visible:ring-brand focus-visible:outline-none sm:inline-flex',
-                !isClosed(issue.status) && issue.due_date! < today
-                  ? 'border-red-500/40 text-red-600 dark:text-red-400'
-                  : 'text-muted-foreground',
-              )}
-            >
-              {formatShortDate(issue.due_date!)}
-            </button>
-          )}
+          <button
+            type="button"
+            aria-label={`Due date: ${formatShortDate(issue.due_date!)}`}
+            className={cn(
+              'relative z-10 hidden shrink-0 items-center rounded-sm border px-1.5 font-mono text-[11px] hover:bg-muted focus-visible:ring-2 focus-visible:ring-brand focus-visible:outline-none sm:inline-flex',
+              !isClosed(issue.status) && issue.due_date! < today
+                ? 'border-red-500/40 text-red-600 dark:text-red-400'
+                : 'text-muted-foreground',
+            )}
+          >
+            {formatShortDate(issue.due_date!)}
+          </button>
         </DueDatePicker>
       )}
       {issue.estimate !== null && (
