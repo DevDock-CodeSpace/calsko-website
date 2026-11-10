@@ -28,6 +28,7 @@ import { StatusIcon } from './StatusIcon'
 import { StatusPicker } from './StatusPicker'
 import { ownWrite } from '@/lib/realtime'
 import { GitHubMark } from '@/features/repos/components/GitHubMark'
+import type { Workspace } from '@/features/workspaces/api'
 
 /**
  * Plain text (one paragraph per line) followed by the attached images → a
@@ -47,8 +48,11 @@ function toDoc(text: string, images: Json[]): Json | null {
 type Attachment = { id: string; file: File; preview: string }
 
 const MAX_ATTACHMENTS = 10
+type IssueDialogContext = Omit<ReturnType<typeof useIssueContext>, 'workspace'> & {
+  workspace: Pick<Workspace, 'id' | 'title' | 'issue_key'>
+}
 
-type CreateIssueDialogProps = {
+export type CreateIssueDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   /** Starting status (e.g. the list group or board column it was opened from). */
@@ -62,16 +66,22 @@ type CreateIssueDialogProps = {
 }
 
 /** Linear's "New issue" modal: title, description, and property chips. ⌘/Ctrl+Enter creates. */
-export function CreateIssueDialog({
+export function CreateIssueDialog(props: CreateIssueDialogProps) {
+  const context = useIssueContext()
+  return <CreateIssueDialogForm {...props} context={context} />
+}
+
+export function CreateIssueDialogForm({
   open,
   onOpenChange,
   status: initialStatus = 'todo',
   parent,
   cycleId: initialCycle = null,
   planId: initialPlan = null,
-}: CreateIssueDialogProps) {
+  context,
+}: CreateIssueDialogProps & { context: IssueDialogContext }) {
   const { team } = useCurrentTeam()
-  const { workspace, members, labels, cycles, repos, plans, canManage, userId } = useIssueContext()
+  const { workspace, members, labels, cycles, repos, plans, canManage, userId } = context
   const queryClient = useQueryClient()
   const navigate = useNavigate()
 

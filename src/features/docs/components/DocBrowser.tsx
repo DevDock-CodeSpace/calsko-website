@@ -56,6 +56,7 @@ import {
   type DragItems,
 } from '../dragDrop'
 import { folderPath, folderSubtree } from '../folders'
+import { readFilesLocationState } from '../files-navigation'
 import { useCanWriteDocs } from '../hooks'
 import type { FileAccess } from '../sharing'
 import { useSelection } from '../useSelection'
@@ -89,6 +90,8 @@ type DocBrowserProps = {
   canCreate: boolean
   docHref: (doc: DocSummary) => string
   diagramHref: (diagram: DiagramSummary) => string
+  filesReturnTo: string
+  filesState: ReturnType<typeof readFilesLocationState>
   /** Shown when the scope has nothing at all. */
   empty: ReactNode
   /** The place's name, the first step of the folder path ("Software Fundamentals › Week 1"). */
@@ -120,6 +123,8 @@ export function DocBrowser({
   canCreate,
   docHref,
   diagramHref,
+  filesReturnTo,
+  filesState,
   empty,
   rootLabel = 'Files',
 }: DocBrowserProps) {
@@ -132,9 +137,9 @@ export function DocBrowser({
   const path = folderPath(current?.id ?? null, folders)
   const rootName = rootLabel
   const entries = useMemo(() => ({ docs, diagrams: diagramsEnabled ? diagrams : [] }), [docs, diagrams, diagramsEnabled])
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(filesState?.filesSearch ?? '')
   const searching = query.trim() !== ''
-  const [sort, setSort] = useState<Sort>({ by: 'updated', dir: 'desc' })
+  const [sort, setSort] = useState<Sort>(filesState?.filesSort ?? { by: 'updated', dir: 'desc' })
 
   /** The scope's docs (where the Docs tool is on) and diagrams, optionally only those directly in one folder. */
   const rowsOf = (folderId?: string | null): Row[] => [
@@ -637,6 +642,7 @@ export function DocBrowser({
                   <span className="flex min-w-0 flex-col">
                     <Link
                       to={row.kind === 'doc' ? docHref(row.item) : diagramHref(row.item)}
+                      state={{ filesReturnTo, filesSearch: query, filesSort: sort }}
                       draggable={false}
                       onClick={selectClick(key)}
                       className="min-w-0 truncate text-sm font-medium outline-none after:absolute after:inset-0"

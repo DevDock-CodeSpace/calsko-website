@@ -3,22 +3,9 @@ import { LoaderCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { DropdownMenuCheckboxItem, DropdownMenuLabel } from '@/components/ui/dropdown-menu'
 import { useAuth } from '@/features/auth/hooks'
-import type { FeatureFlag } from '@/features/flags/flags'
-import { useCurrentTeam } from '@/features/teams/hooks'
 import { errorMessage } from '@/lib/errors'
 import { emailSettingsKey, emailSettingsQuery, saveEmailSettings, type EmailSettings } from '../api'
-
-const OPTIONS: { key: keyof EmailSettings; label: string; flag: FeatureFlag }[] = [
-  { key: 'reminders', label: 'Note reminders', flag: 'email_reminders' },
-  { key: 'meetings', label: 'Meeting invites and changes', flag: 'email_meetings' },
-  { key: 'chat', label: 'Unread chat messages', flag: 'email_chat' },
-]
-
-/** The switches this group's feature flags allow; none means the Email menu isn't shown at all. */
-export function useEmailOptions() {
-  const { features } = useCurrentTeam()
-  return OPTIONS.filter((option) => features.includes(option.flag))
-}
+import { useEmailOptions } from '../hooks'
 
 /**
  * The profile menu's Email submenu: which emails you get, for the emails the group's feature flags have on.

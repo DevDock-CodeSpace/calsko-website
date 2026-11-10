@@ -1,25 +1,28 @@
 import { useMutation, useQuery, useQueryClient, useSuspenseQueries } from '@tanstack/react-query'
 import { CalendarDays, ChevronDown, FileText, FolderOpen, MoreHorizontal, PanelRight, Plus, Presentation, Trash2, UserRound, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { PersonAvatar } from '@/components/PersonRow'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useAuth } from '@/features/auth/hooks'
 import { createDiagram, teamDiagramsQuery } from '@/features/diagrams/api'
 import { createDocument, documentQuery, teamDocsQuery, updateDocument, type Doc } from '@/features/docs/api'
 import { teamIssuesQuery, type IssueStatus, type TeamIssue } from '@/features/issues/api'
 import { DueDatePicker } from '@/features/issues/components/DueDatePicker'
+import type { CreateIssueDialogProps } from '@/features/issues/components/CreateIssueDialog'
+import type { HubProject } from '@/features/issues/hub/hooks'
 import { StarButton } from '@/features/issues/components/StarButton'
 import { TeamIssueRow } from '@/features/issues/components/TeamIssueRow'
-import { ProjectChooser } from '@/features/issues/hub/components/ProjectChooser'
 import { useHubProjects } from '@/features/issues/hub/hooks'
 import { useUpdateTeamIssue } from '@/features/issues/hooks'
 import { compareIssues, isClosed, issueIdentifier, statusLabel } from '@/features/issues/meta'
 import { planFiles, planKeys, planQuery, teamPlansQuery, type Plan, type PlanDetail, type PlanStatus } from '@/features/plans/api'
 import { FileStack, NewFileButton, type StackItem } from '@/features/plans/components/FileStack'
+import { PlanProjectPickerDialog } from '@/features/plans/components/PlanProjectPickerDialog'
 import { PlanStatusDot } from '@/features/plans/components/PlanStatusDot'
 import { ProgressRing } from '@/features/plans/components/ProgressRing'
 import { useDeletePlan, useOpenPlanWhiteboard, useUpdatePlan } from '@/features/plans/hooks'
@@ -27,12 +30,13 @@ import { PLAN_STATUS_ORDER, planStatusLabel, planStatusTile } from '@/features/p
 import { planProgress } from '@/features/plans/progress'
 import { teamMembersQuery, type TeamMember } from '@/features/teams/api'
 import { useCurrentTeam } from '@/features/teams/hooks'
-import { diagramPath, docPath, filesPath, hubPlansPath, issuePath, issuesPath } from '@/features/teams/nav'
+import { diagramPath, docPath, filesPath, hubPlansPath, issuePath } from '@/features/teams/nav'
 import { errorMessage } from '@/lib/errors'
 import { formatShortDate, timeAgo } from '@/lib/format'
 import { ownSave } from '@/lib/realtime'
 import { cn } from '@/lib/utils'
 import { useOthersTyping } from '@/hooks/use-others-typing'
+import { preloadable } from '@/lib/preloadable'
 import type { Json } from '@/types/database.types'
 
 const BRIEF_PROMPT = 'What is this plan for, and what does done look like? Write it in the Brief.'
@@ -93,6 +97,12 @@ function plainBriefBody(text: string): Json {
   }
 }
 
+const PlanCreateIssueDialog = preloadable<CreateIssueDialogProps & { project: HubProject }>(() =>
+  import('@/features/issues/components/CreateIssueDialogForWorkspace').then((module) => ({
+    default: module.CreateIssueDialogForWorkspace,
+  })),
+)
+
 /** A quiet property value in the details panel: text that turns into a button for editors. */
 const chip =
   '-ml-2 inline-flex h-7 max-w-full items-center whitespace-nowrap gap-1.5 rounded-md px-2 text-sm transition-colors enabled:hover:bg-muted disabled:cursor-default'
@@ -150,8 +160,25 @@ function PlanDetails({ plan, issues, people, plans, canEdit }: { plan: PlanDetai
   const updateIssue = useUpdateTeamIssue(team.id)
   const [name, setName] = useState(plan.name)
   const [confirming, setConfirming] = useState(false)
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false)
+  const [issueWorkspaceId, setIssueWorkspaceId] = useState<string | null>(null)
+  const [newIssueOpen, setNewIssueOpen] = useState(false)
 
   const save = (patch: Parameters<typeof update.mutate>[0]['patch']) => update.mutate({ planId: plan.id, patch })
+  const startNewIssue = () => {
+    if (projects.length === 1) {
+      setIssueWorkspaceId(projects[0].id)
+      setNewIssueOpen(true)
+    } else {
+      setProjectPickerOpen(true)
+    }
+  }
+  const chooseProject = (workspaceId: string) => {
+    setProjectPickerOpen(false)
+    setIssueWorkspaceId(workspaceId)
+    setNewIssueOpen(true)
+  }
+  const issueProject = projects.find((project) => project.id === issueWorkspaceId)
   const lead = people.find((p) => p.user_id === plan.lead_id)
   const free = issues.filter((i) => !i.assignee_id && !isClosed(i.status)).sort(compareIssues)
   const canTake = (issue: TeamIssue) => projects.find((p) => p.id === issue.workspace.id)?.canTake ?? false
@@ -195,9 +222,7 @@ function PlanDetails({ plan, issues, people, plans, canEdit }: { plan: PlanDetai
           </div>
           <div className="flex shrink-0 items-center gap-1 pt-1">
             <StarButton target={{ kind: 'plan', planId: plan.id }} label={plan.name} />
-            <ProjectChooser projects={projects} label="New issue in…" to={(id) => `${issuesPath(team.slug, id)}?new=${plan.id}`}>
-              <Plus /> New issue
-            </ProjectChooser>
+            {projects.length > 0 && <Button size="sm" onClick={startNewIssue}><Plus /> New issue</Button>}
             {!panelOpen && (
               <Button size="icon-sm" variant="ghost" aria-label="Show details" title="Show details" className="hidden lg:inline-flex" onClick={() => setPanelOpen(true)}>
                 <PanelRight />
@@ -325,6 +350,36 @@ function PlanDetails({ plan, issues, people, plans, canEdit }: { plan: PlanDetai
       )}
 
       {confirming && <DeletePlanDialog plan={plan} issueCount={issues.length} onClose={() => setConfirming(false)} />}
+      {projects.length > 1 && (
+        <PlanProjectPickerDialog
+          projects={projects}
+          open={projectPickerOpen}
+          onOpenChange={setProjectPickerOpen}
+          onSelect={chooseProject}
+        />
+      )}
+      {issueProject && (
+        <Suspense
+          fallback={
+            <Dialog open={newIssueOpen} onOpenChange={setNewIssueOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>New issue</DialogTitle>
+                  <DialogDescription>Loading project details…</DialogDescription>
+                </DialogHeader>
+              </DialogContent>
+            </Dialog>
+          }
+        >
+          <PlanCreateIssueDialog.Component
+            key={`${issueProject.id}-${newIssueOpen ? 'open' : 'closed'}`}
+            project={issueProject}
+            open={newIssueOpen}
+            planId={plan.id}
+            onOpenChange={setNewIssueOpen}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }
@@ -483,11 +538,9 @@ function DateChip({ label, value, canEdit, onChange }: { label: string; value: s
   }
   return (
     <DueDatePicker value={value} onChange={onChange}>
-      {(open) => (
-        <button type="button" className={cn(chip, !value && 'text-muted-foreground')} aria-label={`${label} date: ${text}`} onClick={open}>
-          <CalendarDays className="size-3.5 shrink-0 text-muted-foreground" /> {text}
-        </button>
-      )}
+      <button type="button" className={cn(chip, !value && 'text-muted-foreground')} aria-label={`${label} date: ${text}`}>
+        <CalendarDays className="size-3.5 shrink-0 text-muted-foreground" /> {text}
+      </button>
     </DueDatePicker>
   )
 }

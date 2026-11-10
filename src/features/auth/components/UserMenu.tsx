@@ -13,8 +13,10 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { EmailMenu, useEmailOptions } from '@/features/email/components/EmailMenu'
-import { LazyFeedbackDialog, preloadFeedbackDialog } from '@/features/feedback/components/LazyFeedbackDialog'
+import { EmailMenu } from '@/features/email/components/EmailMenu'
+import { useEmailOptions } from '@/features/email/hooks'
+import { LazyFeedbackDialog } from '@/features/feedback/components/LazyFeedbackDialog'
+import { preloadFeedbackDialog } from '@/features/feedback/components/feedbackDialogLoader'
 import { StatusDot, StatusMark } from '@/features/status/components/StatusDot'
 import { CHOOSABLE, statusLabel, writeChosen } from '@/features/status/status'
 import { useChosenStatus, useUserStatus } from '@/features/status/store'
