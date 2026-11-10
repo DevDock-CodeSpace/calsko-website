@@ -16,13 +16,16 @@ export type StackItem = {
   quickEdit?: {
     value: string
     onChange: (value: string) => void
+    onOpen: () => boolean
     onSave: () => void
     onCancel: () => void
     loading: boolean
+    loaded: boolean
     saving: boolean
     canSave: boolean
     error?: string
     lockedBy?: string[]
+    recentlyEditingBy?: string[]
     onTyping?: () => void
   }
 }
@@ -133,13 +136,19 @@ export function FileStack({ items, extra, newMenu }: { items: StackItem[]; extra
                 <div className="mt-1.5 flex min-h-0 flex-1 flex-col gap-1">
                   {item.quickEdit.loading ? (
                     <p className="py-2 text-sm text-muted-foreground">Opening Brief…</p>
-                  ) : item.quickEdit.error ? (
+                  ) : item.quickEdit.error && !item.quickEdit.loaded ? (
                     <p role="alert" className="py-2 text-sm text-destructive">{item.quickEdit.error}</p>
                   ) : (
                     <>
+                      {item.quickEdit.error && <p role="alert" className="text-xs text-destructive">{item.quickEdit.error}</p>}
                       {item.quickEdit.lockedBy && item.quickEdit.lockedBy.length > 0 && (
                         <p className="text-xs text-muted-foreground">
                           {item.quickEdit.lockedBy.join(', ')} {item.quickEdit.lockedBy.length === 1 ? 'is' : 'are'} editing the Brief.
+                        </p>
+                      )}
+                      {(!item.quickEdit.lockedBy || item.quickEdit.lockedBy.length === 0) && item.quickEdit.recentlyEditingBy && item.quickEdit.recentlyEditingBy.length > 0 && (
+                        <p role="status" className="text-xs text-muted-foreground">
+                          {item.quickEdit.recentlyEditingBy.join(', ')} {item.quickEdit.recentlyEditingBy.length === 1 ? 'was' : 'were'} editing the Brief. Open it to see their changes.
                         </p>
                       )}
                       <textarea
@@ -167,6 +176,16 @@ export function FileStack({ items, extra, newMenu }: { items: StackItem[]; extra
                 <span className="flex-1 truncate font-mono text-xs text-muted-foreground">{item.meta}</span>
                 {item.quickEdit ? (
                   <>
+                    <Link
+                      to={item.to}
+                      tabIndex={d === 0 ? 0 : -1}
+                      onClick={(event) => {
+                        if (!item.quickEdit?.onOpen()) event.preventDefault()
+                      }}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors hover:bg-muted"
+                    >
+                      Open
+                    </Link>
                     <button
                       type="button"
                       tabIndex={d === 0 ? 0 : -1}

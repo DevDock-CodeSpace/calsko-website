@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, useSuspenseQueries } from '@tanstack/react-query'
 import { CalendarDays, ChevronDown, FileText, FolderOpen, MoreHorizontal, PanelRight, Plus, Presentation, Trash2, UserRound, X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -36,6 +36,36 @@ import { useOthersTyping } from '@/hooks/use-others-typing'
 import type { Json } from '@/types/database.types'
 
 const BRIEF_PROMPT = 'What is this plan for, and what does done look like? Write it in the Brief.'
+const briefDraftKey = (docId: string) => `devdock:plan-brief-draft:${docId}`
+
+type BriefDraft = { content: string; updatedAt: string }
+
+function readBriefDraft(docId: string): BriefDraft | null {
+  const raw = sessionStorage.getItem(briefDraftKey(docId))
+  if (!raw) return null
+  const value: unknown = JSON.parse(raw)
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    !('content' in value) ||
+    typeof value.content !== 'string' ||
+    !('updatedAt' in value) ||
+    typeof value.updatedAt !== 'string'
+  ) {
+    sessionStorage.removeItem(briefDraftKey(docId))
+    return null
+  }
+  return { content: value.content, updatedAt: value.updatedAt }
+}
+
+function clearBriefDraft(docId: string) {
+  try {
+    sessionStorage.removeItem(briefDraftKey(docId))
+  } catch (error) {
+    console.error('[plans] Failed to clear Brief draft', error)
+    toast.error('Couldn’t clear the saved Brief draft from this tab.')
+  }
+}
 
 function isRecord(value: Json): value is { [key: string]: Json } {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -476,10 +506,42 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
   const [briefLoadError, setBriefLoadError] = useState<unknown>()
   const [briefLoading, setBriefLoading] = useState(false)
   const [savingBrief, setSavingBrief] = useState(false)
+  const [recentlyEditingBy, setRecentlyEditingBy] = useState<string[]>([])
   const { lockedBy, markTyping } = useOthersTyping(
     `doc:${briefDoc?.id ?? plan.brief_id ?? ''}`,
     Boolean(editingBrief && (briefDoc?.access_level ?? 0) >= 2),
   )
+  useEffect(() => {
+    if (lockedBy.length > 0) setRecentlyEditingBy(lockedBy)
+  }, [lockedBy])
+  useEffect(() => {
+    const docId = plan.brief_id
+    if (!docId) return
+    let draft: BriefDraft | null
+    try {
+      draft = readBriefDraft(docId)
+    } catch (error) {
+      console.error('[plans] Failed to restore Brief draft', error)
+      toast.error('Couldn’t restore your Brief draft from this tab.')
+      return
+    }
+    if (!draft) return
+    setEditingBrief(true)
+    setBriefText(draft.content)
+    setBriefLoading(true)
+    void queryClient
+      .fetchQuery(documentQuery(docId))
+      .then((doc) => {
+        if (!doc) throw new Error('This Brief is no longer available.')
+        if (doc.access_level < 2) throw new Error('You have view-only access to this Brief.')
+        if (!supportsPlainBriefEdit(doc.body)) {
+          throw new Error('This Brief has formatting. Cancel and choose Open to edit it without losing that formatting.')
+        }
+        setBriefDoc({ ...doc, updated_at: draft.updatedAt })
+      })
+      .catch((error: unknown) => setBriefLoadError(error))
+      .finally(() => setBriefLoading(false))
+  }, [plan.brief_id, queryClient])
   const editBriefHere = () => {
     const docId = plan.brief_id
     if (!docId) return
@@ -487,6 +549,7 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
     setBriefText('')
     setBriefLoadError(undefined)
     setBriefLoading(true)
+    setRecentlyEditingBy([])
     setEditingBrief(true)
     void queryClient
       .fetchQuery(documentQuery(docId))
@@ -507,6 +570,7 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
       })
   }
   const cancelBriefEdit = () => {
+    if (plan.brief_id) clearBriefDraft(plan.brief_id)
     setEditingBrief(false)
     setBriefLoadError(undefined)
   }
@@ -517,7 +581,7 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
     const body = plainBriefBody(briefText)
     const saved = ownSave('documents', briefDoc.id)
     try {
-      const updatedAt = await updateDocument(briefDoc.id, { title: briefDoc.title, body, content: briefText })
+      const updatedAt = await updateDocument(briefDoc.id, { title: briefDoc.title, body, content: briefText }, briefDoc.updated_at)
       saved(updatedAt)
       const savedAt = updatedAt ?? new Date().toISOString()
       const updatedDoc = { ...briefDoc, body, content: briefText, updated_at: savedAt }
@@ -531,6 +595,7 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
       )
       void queryClient.invalidateQueries({ queryKey: planKeys.team(team.id) })
       setBriefDoc(updatedDoc)
+      clearBriefDraft(briefDoc.id)
       setEditingBrief(false)
     } catch (error) {
       saved()
@@ -573,14 +638,30 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
             ? {
                 quickEdit: {
                   value: briefText,
-                  onChange: setBriefText,
+                  onChange: (value: string) => {
+                    setBriefText(value)
+                    setRecentlyEditingBy([])
+                  },
+                  onOpen: () => {
+                    if (!briefDoc) return false
+                    try {
+                      sessionStorage.setItem(briefDraftKey(briefDoc.id), JSON.stringify({ content: briefText, updatedAt: briefDoc.updated_at }))
+                      return true
+                    } catch (error) {
+                      console.error('[plans] Failed to preserve Brief draft', error)
+                      toast.error('Couldn’t keep your Brief draft in this tab. Copy it before opening the Brief.')
+                      return false
+                    }
+                  },
                   onSave: () => void saveBriefInline(),
                   onCancel: cancelBriefEdit,
                   loading: briefLoading,
+                  loaded: Boolean(briefDoc),
                   saving: savingBrief,
                   canSave: Boolean(briefDoc) && briefText !== (briefDoc?.content.trim() ? briefDoc.content : BRIEF_PROMPT) && !lockedBy.length,
                   error: briefLoadError ? errorMessage(briefLoadError) : undefined,
                   lockedBy,
+                  recentlyEditingBy,
                   onTyping: markTyping,
                 },
               }

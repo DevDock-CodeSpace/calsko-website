@@ -145,13 +145,21 @@ export async function createDocument(input: {
 }
 
 /** Saves the title, the rich body, and its plain-text copy (written together). */
-export async function updateDocument(docId: string, input: { title: string; body: Json; content: string }) {
-  const { data, error } = await supabase
+export async function updateDocument(
+  docId: string,
+  input: { title: string; body: Json; content: string },
+  expectedUpdatedAt?: string,
+) {
+  let query = supabase
     .from('documents')
     .update({ title: input.title.trim(), body: input.body, content: input.content })
     .eq('id', docId)
-    .select('id, updated_at')
+  if (expectedUpdatedAt !== undefined) query = query.eq('updated_at', expectedUpdatedAt)
+  const { data, error } = await query.select('id, updated_at')
   if (error) throw toDataError('save the doc', error, writeErrors)
+  if (expectedUpdatedAt !== undefined && (!data || data.length === 0)) {
+    throw new DataError('Someone else changed this Brief. Open it to see their changes.', '409')
+  }
   requireAffected(data, 'save doc')
   // The time the database gave this save: it identifies our own echo (lib/realtime `ownSave`).
   return data[0]?.updated_at
