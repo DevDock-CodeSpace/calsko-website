@@ -21,6 +21,7 @@ export function useOthersTyping(topic: string, enabled: boolean) {
   const { user } = useAuth()
   const { name } = useUserIdentity()
   const [typists, setTypists] = useState<Typist[]>([])
+  const [recentlyEditingBy, setRecentlyEditingBy] = useState<string[]>([])
   /** When this tab started typing, or null while it isn't. */
   const [mine, setMine] = useState<number | null>(null)
   const [tab, setTab] = useState('')
@@ -31,13 +32,18 @@ export function useOthersTyping(topic: string, enabled: boolean) {
     latestName.current = name
   })
 
+  const receiveTypists = useCallback((next: Typist[]) => {
+    setTypists(next)
+    if (next.length > 0) setRecentlyEditingBy([...new Set(next.map((typist) => typist.name))])
+  }, [])
+
   useEffect(() => {
     if (!enabled) return
     let attempts = 0
     let start: number | undefined
     const join = () => {
       try {
-        room.current = joinEditing(topic, { userId: user.id, name: () => latestName.current }, setTypists)
+        room.current = joinEditing(topic, { userId: user.id, name: () => latestName.current }, receiveTypists)
       } catch (error) {
         console.error('[presence] Could not join', error)
         return
@@ -53,18 +59,20 @@ export function useOthersTyping(topic: string, enabled: boolean) {
       room.current?.leave()
       room.current = null
     }
-  }, [topic, enabled, user.id])
+  }, [topic, enabled, receiveTypists, user.id])
 
   const markTyping = useCallback(() => {
     const now = Date.now()
     room.current?.setTyping(true, now)
     setMine((current) => current ?? now)
+    setRecentlyEditingBy([])
     window.clearTimeout(idle.current)
     idle.current = window.setTimeout(() => {
       room.current?.setTyping(false)
       setMine(null)
     }, TYPING_IDLE_MS)
   }, [])
+  const clearRecentlyEditingBy = useCallback(() => setRecentlyEditingBy([]), [])
 
   const others = useMemo(() => [...new Set(typists.map((typist) => typist.name))], [typists])
   const lockedBy = useMemo(() => {
@@ -73,5 +81,5 @@ export function useOthersTyping(topic: string, enabled: boolean) {
     return [...new Set(ahead.map((typist) => typist.name))]
   }, [typists, mine, tab])
 
-  return { others, lockedBy, markTyping }
+  return { others, lockedBy, recentlyEditingBy, markTyping, clearRecentlyEditingBy }
 }

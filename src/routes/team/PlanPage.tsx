@@ -56,7 +56,6 @@ function readBriefDraft(docId: string): BriefDraft | null {
     !('updatedAt' in value) ||
     typeof value.updatedAt !== 'string'
   ) {
-    sessionStorage.removeItem(briefDraftKey(docId))
     return null
   }
   return { content: value.content, updatedAt: value.updatedAt }
@@ -553,35 +552,35 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
   const [{ data: docs }, { data: boards }] = useSuspenseQueries({ queries: [teamDocsQuery(team.id), teamDiagramsQuery(team.id)] })
   const openBoard = useOpenPlanWhiteboard(team.id)
   const [now] = useState(Date.now)
-  const [editingBrief, setEditingBrief] = useState(false)
+  const [restoredDraft] = useState(() => {
+    if (!plan.brief_id) return { draft: null, error: null as unknown }
+    try {
+      return { draft: readBriefDraft(plan.brief_id), error: null as unknown }
+    } catch (error) {
+      return { draft: null, error }
+    }
+  })
+  const [editingBrief, setEditingBrief] = useState(Boolean(restoredDraft.draft))
   const [briefDoc, setBriefDoc] = useState<Doc | null>(null)
-  const [briefText, setBriefText] = useState('')
-  const [briefLoadError, setBriefLoadError] = useState<unknown>()
-  const [briefLoading, setBriefLoading] = useState(false)
+  const [briefText, setBriefText] = useState(restoredDraft.draft?.content ?? '')
+  const [briefLoadError, setBriefLoadError] = useState<unknown>(restoredDraft.error)
+  const [briefLoading, setBriefLoading] = useState(Boolean(restoredDraft.draft))
   const [savingBrief, setSavingBrief] = useState(false)
-  const [recentlyEditingBy, setRecentlyEditingBy] = useState<string[]>([])
-  const { lockedBy, markTyping } = useOthersTyping(
+  const { lockedBy, recentlyEditingBy, markTyping, clearRecentlyEditingBy } = useOthersTyping(
     `doc:${briefDoc?.id ?? plan.brief_id ?? ''}`,
     Boolean(editingBrief && (briefDoc?.access_level ?? 0) >= 2),
   )
   useEffect(() => {
-    if (lockedBy.length > 0) setRecentlyEditingBy(lockedBy)
-  }, [lockedBy])
+    if (restoredDraft.error) {
+      console.error('[plans] Failed to restore Brief draft', restoredDraft.error)
+      toast.error('Couldn’t restore your Brief draft from this tab.')
+    }
+  }, [restoredDraft.error])
   useEffect(() => {
     const docId = plan.brief_id
-    if (!docId) return
-    let draft: BriefDraft | null
-    try {
-      draft = readBriefDraft(docId)
-    } catch (error) {
-      console.error('[plans] Failed to restore Brief draft', error)
-      toast.error('Couldn’t restore your Brief draft from this tab.')
-      return
-    }
+    const draft = restoredDraft.draft
     if (!draft) return
-    setEditingBrief(true)
-    setBriefText(draft.content)
-    setBriefLoading(true)
+    if (!docId) return
     void queryClient
       .fetchQuery(documentQuery(docId))
       .then((doc) => {
@@ -594,7 +593,7 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
       })
       .catch((error: unknown) => setBriefLoadError(error))
       .finally(() => setBriefLoading(false))
-  }, [plan.brief_id, queryClient])
+  }, [plan.brief_id, queryClient, restoredDraft.draft])
   const editBriefHere = () => {
     const docId = plan.brief_id
     if (!docId) return
@@ -602,7 +601,7 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
     setBriefText('')
     setBriefLoadError(undefined)
     setBriefLoading(true)
-    setRecentlyEditingBy([])
+    clearRecentlyEditingBy()
     setEditingBrief(true)
     void queryClient
       .fetchQuery(documentQuery(docId))
@@ -693,7 +692,6 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
                   value: briefText,
                   onChange: (value: string) => {
                     setBriefText(value)
-                    setRecentlyEditingBy([])
                   },
                   onOpen: () => {
                     if (!briefDoc) return false
