@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
+import { useMutation, useQueryClient, useSuspenseQueries } from '@tanstack/react-query'
 import { Check, LoaderCircle, UserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { teamMembersQuery } from '@/features/teams/api'
 import { TeamInviteCode } from '@/features/teams/components/TeamInviteCode'
 import { useCurrentTeam, useCurrentWorkspace } from '@/features/teams/hooks'
-import { addWorkspaceMember, workspaceMembersQuery, type WorkspaceRole } from '../api'
+import { addWorkspaceMember, teamCollectionsQuery, workspaceMembersQuery, type WorkspaceRole } from '../api'
 import { errorMessage } from '@/lib/errors'
 import { initials } from '@/lib/utils'
 
@@ -26,15 +26,26 @@ export function AddWorkspaceMembersDialog() {
   const { team } = useCurrentTeam()
   const { workspace, can } = useCurrentWorkspace()
   const queryClient = useQueryClient()
-  const teamMembers = useSuspenseQuery(teamMembersQuery(team.id)).data
-  const workspaceMembers = useSuspenseQuery(workspaceMembersQuery(workspace.id)).data
+  const [{ data: teamMembers }, { data: workspaceMembers }, { data: collections }] = useSuspenseQueries({
+    queries: [
+      teamMembersQuery(team.id),
+      workspaceMembersQuery(workspace.id),
+      teamCollectionsQuery(team.id),
+    ],
+  })
+  const canAssignDeveloper =
+    team.type !== 'learning' &&
+    workspace.type === 'general' &&
+    collections.some((collection) => collection.id === workspace.collection_id && collection.type === 'development')
   const [role, setRole] = useState<WorkspaceRole>('member')
   // People let in by the access setting can still be added, which gives them a row of their own.
   const inWorkspace = new Set(workspaceMembers.filter((m) => m.via === 'member').map((m) => m.user_id))
   const candidates = teamMembers.filter((m) => !inWorkspace.has(m.user_id))
+  const roleToAdd =
+    !can.canAssignLeads || (role === 'developer' && !canAssignDeveloper) ? 'member' : role
 
   const add = useMutation({
-    mutationFn: (userId: string) => addWorkspaceMember(workspace.id, userId, role),
+    mutationFn: (userId: string) => addWorkspaceMember(workspace.id, userId, roleToAdd),
     onSuccess: () =>
       Promise.all([
         queryClient.invalidateQueries({ queryKey: workspaceMembersQuery(workspace.id).queryKey }),
@@ -72,6 +83,7 @@ export function AddWorkspaceMembersDialog() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="member">Member</SelectItem>
+                {canAssignDeveloper && <SelectItem value="developer">Developer</SelectItem>}
                 <SelectItem value="lead">Lead</SelectItem>
               </SelectContent>
             </Select>

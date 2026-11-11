@@ -19,6 +19,7 @@ import { InvitesPanel } from '@/features/teams/components/InvitesPanel'
 import { roleGuide } from '@/features/teams/screens'
 import { useCurrentTeam } from '@/features/teams/hooks'
 import { teamRoleName } from '@/features/teams/permissions'
+import { teamCollectionsQuery } from '@/features/workspaces/api'
 import { errorMessage } from '@/lib/errors'
 
 const joinedFormat = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
@@ -27,6 +28,8 @@ export function TeamMembersPage() {
   const { user } = useAuth()
   const { team, role, can } = useCurrentTeam()
   const members = useSuspenseQuery(teamMembersQuery(team.id)).data
+  const collections = useSuspenseQuery(teamCollectionsQuery(team.id)).data
+  const hasDevelopmentCollection = collections.some((collection) => collection.type === 'development')
   const queryClient = useQueryClient()
   const [removing, setRemoving] = useState<TeamMember | null>(null)
 
@@ -38,7 +41,8 @@ export function TeamMembersPage() {
     ])
 
   const changeRole = useMutation({
-    mutationFn: (vars: { userId: string; role: Exclude<TeamRole, 'owner'> }) => setTeamRole(team.id, vars.userId, vars.role),
+    mutationFn: (vars: { userId: string; role: Exclude<TeamRole, 'owner' | 'developer'> }) =>
+      setTeamRole(team.id, vars.userId, vars.role),
     onSuccess: (_, vars) => {
       toast.success(`Role changed to ${teamRoleName(vars.role, team.type)}`)
       return refresh()
@@ -66,14 +70,17 @@ export function TeamMembersPage() {
       <ul className="-mt-6 divide-y border-b">
         {members.map((member) => {
           const isYou = member.user_id === user.id
-          // The owner sets any role; admins switch members and teachers.
-          const roleChoices: Exclude<TeamRole, 'owner'>[] =
+          // Developers are assigned inside eligible Spaces, never as a group role.
+          const roleChoices: Exclude<TeamRole, 'owner' | 'developer'>[] =
             isYou || member.role === 'owner'
               ? []
               : can.canChangeRoles
                 ? (['admin', 'teacher', 'member'] as const).filter((r) => r !== member.role)
-                : can.canSetTeachers && (member.role === 'member' || member.role === 'teacher')
-                  ? [member.role === 'member' ? 'teacher' : 'member']
+                : can.canSetTeachers &&
+                    (member.role === 'member' || member.role === 'teacher' || member.role === 'developer')
+                  ? member.role === 'member'
+                    ? ['teacher']
+                    : ['member']
                   : []
           const canChangeRole = roleChoices.length > 0
           const canRemove = !isYou && can.canRemove(member.role)
@@ -118,7 +125,11 @@ export function TeamMembersPage() {
       {can.canInvite && <InvitesPanel />}
 
       <Suspense fallback={null}>
-        <roleGuide.Component type={team.type} myRole={role} />
+        <roleGuide.Component
+          type={team.type}
+          myRole={role}
+          showWorkspaceDeveloper={team.type !== 'learning' && hasDevelopmentCollection}
+        />
       </Suspense>
 
       <ConfirmDialog
