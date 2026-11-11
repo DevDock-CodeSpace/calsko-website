@@ -1,5 +1,6 @@
 import { data, redirect, type LoaderFunctionArgs } from 'react-router'
 import { amPlatformAdminQuery } from '@/features/admin/api'
+import { starterPagePreferenceQuery } from '@/features/auth/api'
 import { requireUser } from '@/features/auth/loaders'
 import { teamPinsQuery, teamViewsQuery } from '@/features/issues/viewsApi'
 import { notificationsQuery, unreadCountsQuery } from '@/features/messaging/api'
@@ -9,7 +10,7 @@ import { readRecentVisits } from '@/features/workspaces/recent'
 import { queryClient } from '@/lib/query-client'
 import { invitesQuery, myTeamsQuery, teamMembersQuery } from './api'
 import { lastTeam, rememberTeam } from './last-team'
-import { landingPath, startPath } from './landing'
+import { landingPath, startPath, starterPagePath } from './landing'
 
 /**
  * /app: send the user where their last/first team opens (`teamStartLoader`); with no team, the platform
@@ -94,8 +95,8 @@ export async function teamMembersLoader({ request, params }: LoaderFunctionArgs)
 }
 
 /**
- * /t/:teamSlug/start: where a group opens, after signing in or switching group or collection
- * (`landingPath`). It reads the same cached workspace list the sidebar does, so it costs no extra request.
+ * /t/:teamSlug/start: after sign-in or a group switch, use the account's saved destination when available.
+ * Collection switches keep their existing automatic landing behavior and don't read the preference.
  */
 export async function teamStartLoader({ request, params }: LoaderFunctionArgs) {
   const user = await requireUser(request)
@@ -103,8 +104,19 @@ export async function teamStartLoader({ request, params }: LoaderFunctionArgs) {
   const membership = memberships.find((m) => m.team.slug === params.teamSlug)
   if (!membership) throw data('Group not found, or you’re not a member.', { status: 404 })
   const { team } = membership
-  const { workspaces, collections } = await queryClient.ensureQueryData(teamContentsQuery(team.id))
+  const collectionSwitch = new URL(request.url).searchParams.get('collection') === '1'
+  const [contents, preference] = await Promise.all([
+    queryClient.ensureQueryData(teamContentsQuery(team.id)),
+    collectionSwitch
+      ? Promise.resolve(null)
+      : queryClient.fetchQuery({ ...starterPagePreferenceQuery(user.id, team.id), staleTime: 0 }),
+  ])
+  const { workspaces, collections } = contents
   const isAdmin = membership.role === 'owner' || membership.role === 'admin'
   const collection = pickCollection(availableCollections(collections, workspaces, user.id, isAdmin), readCollectionView(team.id), user.id)
-  throw redirect(landingPath(team.slug, team.type, collection, workspaces, readRecentVisits(team.id)))
+  throw redirect(
+    collectionSwitch
+      ? landingPath(team.slug, team.type, collection, workspaces, readRecentVisits(team.id))
+      : starterPagePath(team.slug, team.type, collection, workspaces, readRecentVisits(team.id), preference),
+  )
 }
