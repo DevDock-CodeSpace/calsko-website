@@ -8,8 +8,9 @@ import { logError } from '@/lib/error-tracking'
 
 // Meetings (live_sessions): scheduled Jitsi (JaaS) calls. Same scope model and access
 // rules as docs (workspace_id null = group-wide): readers see and join, writers
-// (group owners/admins, workspace leads) schedule, edit and cancel. The room
-// itself is only reachable with a token from the jaas-token Edge Function.
+// (group owners/admins, workspace leads) schedule, edit and cancel; Developers
+// in Development Spaces can schedule meetings in their Space.
+// The room itself is only reachable with a token from the jaas-token Edge Function.
 
 /** Google's reply states; 'needsAction' is "invited, hasn't replied". */
 export type RsvpStatus = 'accepted' | 'declined' | 'tentative' | 'needsAction'

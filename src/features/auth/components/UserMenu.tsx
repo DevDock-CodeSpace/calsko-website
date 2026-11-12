@@ -1,6 +1,6 @@
-import { Check, LogOut, Mail, MessageSquareText, ShieldCheck } from 'lucide-react'
-import { useState } from 'react'
-import { Link } from 'react-router'
+import { Check, House, LogOut, Mail, MessageSquareText, ShieldCheck } from 'lucide-react'
+import { Suspense, useState } from 'react'
+import { Link, useParams } from 'react-router'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -13,14 +13,20 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { EmailMenu, useEmailOptions } from '@/features/email/components/EmailMenu'
-import { LazyFeedbackDialog, preloadFeedbackDialog } from '@/features/feedback/components/LazyFeedbackDialog'
+import { EmailMenu } from '@/features/email/components/EmailMenu'
+import { useEmailOptions } from '@/features/email/hooks'
+import { LazyFeedbackDialog } from '@/features/feedback/components/LazyFeedbackDialog'
+import { preloadFeedbackDialog } from '@/features/feedback/components/feedbackDialogLoader'
 import { StatusDot, StatusMark } from '@/features/status/components/StatusDot'
 import { CHOOSABLE, statusLabel, writeChosen } from '@/features/status/status'
 import { useChosenStatus, useUserStatus } from '@/features/status/store'
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
 import { initials } from '@/lib/utils'
+import { preloadable } from '@/lib/preloadable'
 import { useAuth, useSignOut, useUserIdentity } from '../hooks'
+
+const starterPageDialog = preloadable(() => import('@/features/teams/components/StarterPageDialog'))
+const StarterPageDialog = starterPageDialog.Component
 
 /**
  * Signed-in user in the sidebar footer: avatar + name, which opens the account
@@ -31,9 +37,12 @@ export function UserMenu() {
   const { name, email, avatarUrl, profileUnavailable } = useUserIdentity()
   const signOut = useSignOut()
   const { user } = useAuth()
+  const { teamSlug } = useParams()
   const chosen = useChosenStatus()
   const status = useUserStatus(user.id)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [starterPageOpen, setStarterPageOpen] = useState(false)
+  const [starterPageWanted, setStarterPageWanted] = useState(false)
   const emailOptions = useEmailOptions()
   const [feedbackWanted, setFeedbackWanted] = useState(false)
 
@@ -115,6 +124,22 @@ export function UserMenu() {
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
             )}
+            {teamSlug && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onPointerEnter={starterPageDialog.preload}
+                  onFocus={starterPageDialog.preload}
+                  onSelect={() => {
+                    setStarterPageWanted(true)
+                    setStarterPageOpen(true)
+                  }}
+                >
+                  <House />
+                  Starter page
+                </DropdownMenuItem>
+              </>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onPointerEnter={preloadFeedbackDialog}
@@ -141,6 +166,17 @@ export function UserMenu() {
           </DropdownMenuContent>
         </DropdownMenu>
         {feedbackWanted && <LazyFeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />}
+        {starterPageWanted && (
+          <Suspense fallback={null}>
+            <StarterPageDialog
+              open={starterPageOpen}
+              onOpenChange={(open) => {
+                setStarterPageOpen(open)
+                if (!open) setStarterPageWanted(false)
+              }}
+            />
+          </Suspense>
+        )}
         {signOut.isError && (
           <p role="alert" className="basis-full px-2 pt-1 text-xs text-destructive">
             {signOut.error.message}

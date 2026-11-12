@@ -16,7 +16,7 @@ export function conversationTitle(
   return people.find((person) => person.user_id === otherId)?.profile?.display_name ?? 'Direct message'
 }
 
-export function authorName(authorId: string, people: TeamMember[]) {
+export function authorName(authorId: string | null, people: TeamMember[]) {
   return people.find((person) => person.user_id === authorId)?.profile?.display_name ?? 'Unknown member'
 }
 

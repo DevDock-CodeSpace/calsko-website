@@ -3,8 +3,7 @@ import { cn } from '@/lib/utils'
 
 /**
  * Wraps a trigger with a hidden native date input whose calendar opens on click
- * (`showPicker()`), so a due date can be set inline anywhere. `children` is given
- * an `open` callback to wire onto its own button.
+ * (`showPicker()`), so a due date can be set inline anywhere.
  */
 export function DueDatePicker({
   value,
@@ -15,7 +14,7 @@ export function DueDatePicker({
   value: string | null
   onChange: (date: string | null) => void
   className?: string
-  children: (open: () => void) => ReactNode
+  children: ReactNode
 }) {
   const input = useRef<HTMLInputElement>(null)
   const open = () => {
@@ -36,7 +35,7 @@ export function DueDatePicker({
         onChange={(e) => onChange(e.target.value || null)}
         className="pointer-events-none absolute inset-0 opacity-0 dark:scheme-dark"
       />
-      {children(open)}
+      <span onClick={open}>{children}</span>
     </span>
   )
 }

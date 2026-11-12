@@ -1,5 +1,5 @@
-import { ChevronUp, Maximize2, Minus, PhoneOff } from 'lucide-react'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ChevronUp, Maximize2, Minus, Move, PhoneOff } from 'lucide-react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import { DockSpinner } from '@/components/DockSpinner'
 import { Button } from '@/components/ui/button'
@@ -50,8 +50,74 @@ export function CallDock() {
   const { call, anchorEl, minimized, setMinimized, endCall } = useLiveCall()
   const navigate = useNavigate()
   const containerRef = useRef<HTMLDivElement>(null)
+  const miniRef = useRef<HTMLDivElement>(null)
+  const drag = useRef<{ pointerId: number; x: number; y: number; left: number; top: number } | null>(null)
+  const [miniPosition, setMiniPosition] = useState<{ left: number; top: number; sessionId: string } | null>(null)
   const docked = anchorEl !== null
   const hidden = minimized && !docked
+  const position = miniPosition?.sessionId === call?.sessionId ? miniPosition : null
+  const clampMiniPosition = useCallback((left: number, top: number) => {
+    const rect = miniRef.current?.getBoundingClientRect()
+    const width = rect?.width ?? 280
+    const height = rect?.height ?? 40
+    const gutter = 8
+    return {
+      left: Math.max(gutter, Math.min(left, window.innerWidth - width - gutter)),
+      top: Math.max(gutter, Math.min(top, window.innerHeight - height - gutter)),
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!hidden || !position) return
+    const keepOnScreen = () => {
+      setMiniPosition((current) =>
+        current?.sessionId === position.sessionId
+          ? { ...clampMiniPosition(current.left, current.top), sessionId: current.sessionId }
+          : current,
+      )
+    }
+    window.addEventListener('resize', keepOnScreen)
+    return () => window.removeEventListener('resize', keepOnScreen)
+  }, [clampMiniPosition, hidden, position])
+
+  const startMiniDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.target instanceof Element && event.target.closest('button')) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.preventDefault()
+  }
+  const moveMini = (event: PointerEvent<HTMLDivElement>) => {
+    const start = drag.current
+    if (!start || start.pointerId !== event.pointerId || !call) return
+    const next = clampMiniPosition(start.left + event.clientX - start.x, start.top + event.clientY - start.y)
+    event.currentTarget.style.left = `${next.left}px`
+    event.currentTarget.style.top = `${next.top}px`
+    event.currentTarget.style.right = 'auto'
+    event.currentTarget.style.bottom = 'auto'
+  }
+  const stopMiniDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (drag.current?.pointerId !== event.pointerId) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    if (call) setMiniPosition({ ...clampMiniPosition(rect.left, rect.top), sessionId: call.sessionId })
+    drag.current = null
+  }
+  const moveMiniByKey = (event: KeyboardEvent<HTMLSpanElement>) => {
+    const offsets: Record<string, [number, number]> = {
+      ArrowLeft: [-16, 0],
+      ArrowRight: [16, 0],
+      ArrowUp: [0, -16],
+      ArrowDown: [0, 16],
+    }
+    const offset = offsets[event.key]
+    if (!offset) return
+    event.preventDefault()
+    const rect = miniRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const left = position?.left ?? rect.left
+    const top = position?.top ?? rect.top
+    if (call) setMiniPosition({ ...clampMiniPosition(left + offset[0], top + offset[1]), sessionId: call.sessionId })
+  }
 
   // While docked, follow the anchor's box every frame (covers scroll, resize and
   // the sidebar's open/close animation without extra listeners).
@@ -132,9 +198,29 @@ export function CallDock() {
       </div>
 
       {hidden && (
-        <div role="region" aria-label="Call in progress" className="fixed right-4 bottom-4 z-50 flex h-10 max-w-[calc(100vw-2rem)] items-center gap-0.5 rounded-full border bg-background py-1 pr-1 pl-3 shadow-lg">
+        <div
+          ref={miniRef}
+          role="region"
+          aria-label="Call in progress"
+          onPointerDown={startMiniDrag}
+          onPointerMove={moveMini}
+          onPointerUp={stopMiniDrag}
+          onPointerCancel={stopMiniDrag}
+          onLostPointerCapture={stopMiniDrag}
+          style={position ? { left: position.left, top: position.top, right: 'auto', bottom: 'auto' } : undefined}
+          className="fixed right-4 bottom-4 z-50 flex h-10 max-w-[calc(100vw-1rem)] items-center gap-0.5 rounded-full border bg-background py-1 pr-1 pl-3 shadow-lg"
+        >
           <span className="mr-1.5 size-2 shrink-0 animate-pulse rounded-full bg-destructive" aria-hidden />
-          <span className="max-w-40 min-w-0 truncate text-xs font-medium">{call.title}</span>
+          <span
+            role="group"
+            tabIndex={0}
+            aria-label="Move call indicator. Use arrow keys to move it."
+            onKeyDown={moveMiniByKey}
+            className="flex min-w-0 flex-1 cursor-move touch-none items-center gap-1.5 truncate text-xs font-medium outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-brand/50"
+          >
+            <Move className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="max-w-40 truncate">{call.title}</span>
+          </span>
           <Button variant="ghost" size="icon-sm" className="rounded-full" aria-label="Show call window" title="Show call" onClick={() => setMinimized(false)}>
             <ChevronUp />
           </Button>

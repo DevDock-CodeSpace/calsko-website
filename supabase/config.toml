@@ -420,3 +420,8 @@ verify_jwt = false
 # Error trackers push here without a Supabase login; the function checks the source's token.
 [functions.error-intake]
 verify_jwt = false
+
+# Outside tools (AWS SNS, Azure action groups, Slack-style webhooks) post here without a Supabase login;
+# the function checks the feed's token (docs/CHAT_FEEDS.md).
+[functions.chat-intake]
+verify_jwt = false

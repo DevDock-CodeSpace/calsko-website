@@ -13,7 +13,7 @@ cross-group conversations. It does not reuse workspace visibility.
 - `conversations`: `team_id`, `kind` (`channel`/`dm`/`group`), name, description, archived. One `general` channel per group.
 - `conversation_members`: membership, role (`owner`/`member`), joined/left. **The only authority for DMs and groups**;
   group admins don't bypass it.
-- `messages`: author, optional `parent_id` (one level of threads), `client_id` (retry idempotency), TipTap JSON `body`, a
+- `messages`: author (null for a bot's message, which has `bot` instead), optional `parent_id` (one level of threads), `client_id` (retry idempotency), TipTap JSON `body`, a
   plain-text `content` copy, edited/deleted stamps. A deleted message stays as a placeholder.
 - `message_reactions`, `message_pins`, `message_attachments` (private 10 MB bucket, allow-listed types), `conversation_reads`,
   `thread_reads`, `conversation_preferences` (all / mentions / muted), `notifications` (recipient-only, unique dedupe key).
@@ -39,6 +39,10 @@ cross-group conversations. It does not reuse workspace visibility.
 
 One level of threads. Unread state comes from read positions (`mark_conversation_read`, `mark_thread_read`). DMs, groups,
 mentions and thread replies notify; muting suppresses alerts but not unread counts. Typing is Realtime Presence, never stored.
+
+## Bot messages
+Chat feeds (`docs/CHAT_FEEDS.md`) post into channels and private group conversations as bots: `author_id` is null and `bot` says who posted. Only database
+functions write them; group owners and admins can delete them; critical ones notify the group (`alert`).
 
 ## Search
 A parameterized RPC over an indexed text projection: only conversations the caller can read, no deleted bodies, replies

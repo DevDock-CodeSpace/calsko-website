@@ -30,9 +30,10 @@ export function teamPermissions(role: TeamRole) {
     /** Admins switch people between member and teacher; only the owner makes admins. */
     canSetTeachers: isAdmin,
     canLeave: !isOwner,
-    /** Owner removes anyone else; admin removes members and teachers. */
+    /** Owner removes anyone else; admin removes members, teachers and developers. */
     canRemove: (target: TeamRole) =>
-      target !== 'owner' && (isOwner || (role === 'admin' && (target === 'member' || target === 'teacher'))),
+      target !== 'owner' &&
+      (isOwner || (role === 'admin' && (target === 'member' || target === 'teacher' || target === 'developer'))),
   }
 }
 
@@ -47,11 +48,18 @@ export function workspacePermissions(teamRole: TeamRole, workspaceRole: Workspac
     canAddMembers: isTeamAdmin || isLead,
     /** Only team owners/admins can make someone a lead. */
     canAssignLeads: isTeamAdmin,
-    canRemove: (target: WorkspaceRole) => isTeamAdmin || (isLead && target === 'member'),
+    /** Developers have member-level access, so leads may remove them like members. */
+    canRemove: (target: WorkspaceRole) => isTeamAdmin || (isLead && (target === 'member' || target === 'developer')),
   }
 }
 
-export const teamRoleLabel: Record<TeamRole, string> = { owner: 'Owner', admin: 'Admin', teacher: 'Teacher', member: 'Member' }
+export const teamRoleLabel: Record<TeamRole, string> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  teacher: 'Teacher',
+  developer: 'Developer',
+  member: 'Member',
+}
 
 /**
  * A group role's name as people in that group say it: the teacher role is a **Trainer** outside
@@ -61,7 +69,7 @@ export const teamRoleLabel: Record<TeamRole, string> = { owner: 'Owner', admin: 
 export function teamRoleName(role: TeamRole, teamType: TeamType): string {
   return role === 'teacher' && teamType !== 'learning' ? 'Trainer' : teamRoleLabel[role]
 }
-export const workspaceRoleLabel: Record<WorkspaceRole, string> = { lead: 'Lead', member: 'Member' }
+export const workspaceRoleLabel: Record<WorkspaceRole, string> = { lead: 'Lead', developer: 'Developer', member: 'Member' }
 
 export const teamTypes: Record<TeamType, { label: string; hint: string; icon: LucideIcon }> = {
   learning: { label: 'Learning', hint: 'Courses, cohorts, study groups', icon: GraduationCap },

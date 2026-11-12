@@ -1,25 +1,28 @@
 import { useMutation, useQuery, useQueryClient, useSuspenseQueries } from '@tanstack/react-query'
 import { CalendarDays, ChevronDown, FileText, FolderOpen, MoreHorizontal, PanelRight, Plus, Presentation, Trash2, UserRound, X } from 'lucide-react'
-import { useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { PersonAvatar } from '@/components/PersonRow'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useAuth } from '@/features/auth/hooks'
 import { createDiagram, teamDiagramsQuery } from '@/features/diagrams/api'
-import { createDocument, teamDocsQuery } from '@/features/docs/api'
+import { createDocument, documentQuery, teamDocsQuery, updateDocument, type Doc } from '@/features/docs/api'
 import { teamIssuesQuery, type IssueStatus, type TeamIssue } from '@/features/issues/api'
 import { DueDatePicker } from '@/features/issues/components/DueDatePicker'
+import type { CreateIssueDialogProps } from '@/features/issues/components/CreateIssueDialog'
+import type { HubProject } from '@/features/issues/hub/hooks'
 import { StarButton } from '@/features/issues/components/StarButton'
 import { TeamIssueRow } from '@/features/issues/components/TeamIssueRow'
-import { ProjectChooser } from '@/features/issues/hub/components/ProjectChooser'
 import { useHubProjects } from '@/features/issues/hub/hooks'
 import { useUpdateTeamIssue } from '@/features/issues/hooks'
 import { compareIssues, isClosed, issueIdentifier, statusLabel } from '@/features/issues/meta'
 import { planFiles, planKeys, planQuery, teamPlansQuery, type Plan, type PlanDetail, type PlanStatus } from '@/features/plans/api'
 import { FileStack, NewFileButton, type StackItem } from '@/features/plans/components/FileStack'
+import { PlanProjectPickerDialog } from '@/features/plans/components/PlanProjectPickerDialog'
 import { PlanStatusDot } from '@/features/plans/components/PlanStatusDot'
 import { ProgressRing } from '@/features/plans/components/ProgressRing'
 import { useDeletePlan, useOpenPlanWhiteboard, useUpdatePlan } from '@/features/plans/hooks'
@@ -27,10 +30,78 @@ import { PLAN_STATUS_ORDER, planStatusLabel, planStatusTile } from '@/features/p
 import { planProgress } from '@/features/plans/progress'
 import { teamMembersQuery, type TeamMember } from '@/features/teams/api'
 import { useCurrentTeam } from '@/features/teams/hooks'
-import { diagramPath, docPath, filesPath, hubPlansPath, issuePath, issuesPath } from '@/features/teams/nav'
+import { diagramPath, docPath, filesPath, hubPlansPath, issuePath } from '@/features/teams/nav'
 import { errorMessage } from '@/lib/errors'
 import { formatShortDate, timeAgo } from '@/lib/format'
+import { ownSave } from '@/lib/realtime'
 import { cn } from '@/lib/utils'
+import { useOthersTyping } from '@/hooks/use-others-typing'
+import { preloadable } from '@/lib/preloadable'
+import type { Json } from '@/types/database.types'
+
+const BRIEF_PROMPT = 'What is this plan for, and what does done look like? Write it in the Brief.'
+const briefDraftKey = (docId: string) => `devdock:plan-brief-draft:${docId}`
+
+type BriefDraft = { content: string; updatedAt: string }
+
+function readBriefDraft(docId: string): BriefDraft | null {
+  const raw = sessionStorage.getItem(briefDraftKey(docId))
+  if (!raw) return null
+  const value: unknown = JSON.parse(raw)
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    !('content' in value) ||
+    typeof value.content !== 'string' ||
+    !('updatedAt' in value) ||
+    typeof value.updatedAt !== 'string'
+  ) {
+    sessionStorage.removeItem(briefDraftKey(docId))
+    return null
+  }
+  return { content: value.content, updatedAt: value.updatedAt }
+}
+
+function clearBriefDraft(docId: string) {
+  try {
+    sessionStorage.removeItem(briefDraftKey(docId))
+  } catch (error) {
+    console.error('[plans] Failed to clear Brief draft', error)
+    toast.error('Couldn’t clear the saved Brief draft from this tab.')
+  }
+}
+
+function isRecord(value: Json): value is { [key: string]: Json } {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function supportsPlainBriefEdit(body: Json | null) {
+  if (body === null) return true
+  if (!isRecord(body) || body.type !== 'doc' || !Array.isArray(body.content)) return false
+  if (!Object.keys(body).every((key) => key === 'type' || key === 'content')) return false
+  return body.content.every((node) => {
+    if (!isRecord(node) || node.type !== 'paragraph' || !Object.keys(node).every((key) => key === 'type' || key === 'content')) return false
+    if (node.content === undefined) return true
+    return Array.isArray(node.content) && node.content.every(
+      (part) => isRecord(part) && part.type === 'text' && typeof part.text === 'string' && Object.keys(part).every((key) => key === 'type' || key === 'text'),
+    )
+  })
+}
+
+function plainBriefBody(text: string): Json {
+  return {
+    type: 'doc',
+    content: text.split('\n').map((line) =>
+      line ? { type: 'paragraph', content: [{ type: 'text', text: line }] } : { type: 'paragraph' },
+    ),
+  }
+}
+
+const PlanCreateIssueDialog = preloadable<CreateIssueDialogProps & { project: HubProject }>(() =>
+  import('@/features/issues/components/CreateIssueDialogForWorkspace').then((module) => ({
+    default: module.CreateIssueDialogForWorkspace,
+  })),
+)
 
 /** A quiet property value in the details panel: text that turns into a button for editors. */
 const chip =
@@ -51,8 +122,8 @@ const BAR: [IssueStatus, string][] = [
  * yet (Up for grabs, with Assign to me), its issues by person, and a details panel on the right
  * (progress, status, lead, dates, people, projects) that closes with ✕; it starts open and the choice
  * isn't remembered. Its lead, its creator and group owners/admins edit and delete it; everyone in the
- * group edits its files. Everything comes from the hub's cached lists plus the plan itself: no extra
- * request beyond `planLoader`'s.
+ * group edits its files. The Brief's full text loads only when its inline editor is opened; the page
+ * otherwise uses the hub's cached lists and `planLoader` data.
  */
 export function PlanPage() {
   const { planId = '' } = useParams()
@@ -89,8 +160,25 @@ function PlanDetails({ plan, issues, people, plans, canEdit }: { plan: PlanDetai
   const updateIssue = useUpdateTeamIssue(team.id)
   const [name, setName] = useState(plan.name)
   const [confirming, setConfirming] = useState(false)
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false)
+  const [issueWorkspaceId, setIssueWorkspaceId] = useState<string | null>(null)
+  const [newIssueOpen, setNewIssueOpen] = useState(false)
 
   const save = (patch: Parameters<typeof update.mutate>[0]['patch']) => update.mutate({ planId: plan.id, patch })
+  const startNewIssue = () => {
+    if (projects.length === 1) {
+      setIssueWorkspaceId(projects[0].id)
+      setNewIssueOpen(true)
+    } else {
+      setProjectPickerOpen(true)
+    }
+  }
+  const chooseProject = (workspaceId: string) => {
+    setProjectPickerOpen(false)
+    setIssueWorkspaceId(workspaceId)
+    setNewIssueOpen(true)
+  }
+  const issueProject = projects.find((project) => project.id === issueWorkspaceId)
   const lead = people.find((p) => p.user_id === plan.lead_id)
   const free = issues.filter((i) => !i.assignee_id && !isClosed(i.status)).sort(compareIssues)
   const canTake = (issue: TeamIssue) => projects.find((p) => p.id === issue.workspace.id)?.canTake ?? false
@@ -134,9 +222,7 @@ function PlanDetails({ plan, issues, people, plans, canEdit }: { plan: PlanDetai
           </div>
           <div className="flex shrink-0 items-center gap-1 pt-1">
             <StarButton target={{ kind: 'plan', planId: plan.id }} label={plan.name} />
-            <ProjectChooser projects={projects} label="New issue in…" to={(id) => `${issuesPath(team.slug, id)}?new=${plan.id}`}>
-              <Plus /> New issue
-            </ProjectChooser>
+            {projects.length > 0 && <Button size="sm" onClick={startNewIssue}><Plus /> New issue</Button>}
             {!panelOpen && (
               <Button size="icon-sm" variant="ghost" aria-label="Show details" title="Show details" className="hidden lg:inline-flex" onClick={() => setPanelOpen(true)}>
                 <PanelRight />
@@ -167,7 +253,7 @@ function PlanDetails({ plan, issues, people, plans, canEdit }: { plan: PlanDetai
           </div>
         </div>
 
-        <PlanFiles plan={plan} />
+        <PlanFiles key={`${plan.id}:${plan.brief_id ?? ''}`} plan={plan} />
 
         <section aria-labelledby="up-for-grabs">
           <div className="flex flex-wrap items-baseline justify-between gap-2 border-b pb-1.5">
@@ -264,6 +350,36 @@ function PlanDetails({ plan, issues, people, plans, canEdit }: { plan: PlanDetai
       )}
 
       {confirming && <DeletePlanDialog plan={plan} issueCount={issues.length} onClose={() => setConfirming(false)} />}
+      {projects.length > 1 && (
+        <PlanProjectPickerDialog
+          projects={projects}
+          open={projectPickerOpen}
+          onOpenChange={setProjectPickerOpen}
+          onSelect={chooseProject}
+        />
+      )}
+      {issueProject && (
+        <Suspense
+          fallback={
+            <Dialog open={newIssueOpen} onOpenChange={setNewIssueOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>New issue</DialogTitle>
+                  <DialogDescription>Loading project details…</DialogDescription>
+                </DialogHeader>
+              </DialogContent>
+            </Dialog>
+          }
+        >
+          <PlanCreateIssueDialog.Component
+            key={`${issueProject.id}-${newIssueOpen ? 'open' : 'closed'}`}
+            project={issueProject}
+            open={newIssueOpen}
+            planId={plan.id}
+            onOpenChange={setNewIssueOpen}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }
@@ -422,11 +538,9 @@ function DateChip({ label, value, canEdit, onChange }: { label: string; value: s
   }
   return (
     <DueDatePicker value={value} onChange={onChange}>
-      {(open) => (
-        <button type="button" className={cn(chip, !value && 'text-muted-foreground')} aria-label={`${label} date: ${text}`} onClick={open}>
-          <CalendarDays className="size-3.5 shrink-0 text-muted-foreground" /> {text}
-        </button>
-      )}
+      <button type="button" className={cn(chip, !value && 'text-muted-foreground')} aria-label={`${label} date: ${text}`}>
+        <CalendarDays className="size-3.5 shrink-0 text-muted-foreground" /> {text}
+      </button>
     </DueDatePicker>
   )
 }
@@ -439,6 +553,127 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
   const [{ data: docs }, { data: boards }] = useSuspenseQueries({ queries: [teamDocsQuery(team.id), teamDiagramsQuery(team.id)] })
   const openBoard = useOpenPlanWhiteboard(team.id)
   const [now] = useState(Date.now)
+  const [draftRestore] = useState(() => {
+    if (!plan.brief_id) return null
+    try {
+      return { docId: plan.brief_id, draft: readBriefDraft(plan.brief_id) } as const
+    } catch (error) {
+      return { docId: plan.brief_id, error } as const
+    }
+  })
+  const restoredDraft = draftRestore?.docId === plan.brief_id && 'draft' in draftRestore ? draftRestore.draft : null
+  const [editingBrief, setEditingBrief] = useState(Boolean(restoredDraft))
+  const [briefDoc, setBriefDoc] = useState<Doc | null>(null)
+  const [briefText, setBriefText] = useState(restoredDraft?.content ?? '')
+  const [briefLoadError, setBriefLoadError] = useState<unknown>(
+    draftRestore?.docId === plan.brief_id && 'error' in draftRestore ? draftRestore.error : undefined,
+  )
+  const [briefLoading, setBriefLoading] = useState(Boolean(restoredDraft))
+  const [savingBrief, setSavingBrief] = useState(false)
+  const [editingPresence, setEditingPresence] = useState<{ current: string[]; recent: string[] }>({ current: [], recent: [] })
+  const { lockedBy, markTyping } = useOthersTyping(
+    `doc:${briefDoc?.id ?? plan.brief_id ?? ''}`,
+    Boolean(editingBrief && (briefDoc?.access_level ?? 0) >= 2),
+  )
+  if (lockedBy.length > 0 && lockedBy !== editingPresence.current) {
+    setEditingPresence({ current: lockedBy, recent: lockedBy })
+  }
+  const recentlyEditingBy = editingPresence.recent
+  useEffect(() => {
+    const docId = plan.brief_id
+    if (!docId || draftRestore?.docId !== docId) return
+    if ('error' in draftRestore) {
+      const error = draftRestore.error
+      console.error('[plans] Failed to restore Brief draft', error)
+      toast.error('Couldn’t restore your Brief draft from this tab.')
+      return
+    }
+    const draft = draftRestore.draft
+    if (!draft) return
+    let active = true
+    void queryClient
+      .fetchQuery(documentQuery(docId))
+      .then((doc) => {
+        if (!doc) throw new Error('This Brief is no longer available.')
+        if (doc.access_level < 2) throw new Error('You have view-only access to this Brief.')
+        if (!supportsPlainBriefEdit(doc.body)) {
+          throw new Error('This Brief has formatting. Cancel and choose Open to edit it without losing that formatting.')
+        }
+        if (active) setBriefDoc({ ...doc, updated_at: draft.updatedAt })
+      })
+      .catch((error: unknown) => {
+        if (active) setBriefLoadError(error)
+      })
+      .finally(() => {
+        if (active) setBriefLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [draftRestore, plan.brief_id, queryClient])
+  const editBriefHere = () => {
+    const docId = plan.brief_id
+    if (!docId) return
+    setBriefDoc(null)
+    setBriefText('')
+    setBriefLoadError(undefined)
+    setBriefLoading(true)
+    setEditingPresence((current) => ({ ...current, recent: [] }))
+    setEditingBrief(true)
+    void queryClient
+      .fetchQuery(documentQuery(docId))
+      .then((doc) => {
+        if (!doc) throw new Error('This Brief is no longer available.')
+        if (doc.access_level < 2) throw new Error('You have view-only access to this Brief.')
+        if (!supportsPlainBriefEdit(doc.body)) {
+          throw new Error('This Brief has formatting. Cancel and choose Open to edit it without losing that formatting.')
+        }
+        setBriefDoc(doc)
+        setBriefText(doc.content.trim() ? doc.content : BRIEF_PROMPT)
+      })
+      .catch((error: unknown) => {
+        setBriefLoadError(error)
+      })
+      .finally(() => {
+        setBriefLoading(false)
+      })
+  }
+  const cancelBriefEdit = () => {
+    if (plan.brief_id) clearBriefDraft(plan.brief_id)
+    setEditingBrief(false)
+    setBriefLoadError(undefined)
+  }
+  const saveBriefInline = async () => {
+    if (!briefDoc || savingBrief || briefText === (briefDoc.content.trim() ? briefDoc.content : BRIEF_PROMPT)) return
+    setSavingBrief(true)
+    setBriefLoadError(undefined)
+    const body = plainBriefBody(briefText)
+    const saved = ownSave('documents', briefDoc.id)
+    try {
+      const updatedAt = await updateDocument(briefDoc.id, { title: briefDoc.title, body, content: briefText }, briefDoc.updated_at)
+      saved(updatedAt)
+      const savedAt = updatedAt ?? new Date().toISOString()
+      const updatedDoc = { ...briefDoc, body, content: briefText, updated_at: savedAt }
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: documentQuery(briefDoc.id).queryKey, exact: true }),
+        queryClient.cancelQueries({ queryKey: planKeys.detail(plan.id), exact: true }),
+      ])
+      queryClient.setQueryData(documentQuery(briefDoc.id).queryKey, updatedDoc)
+      queryClient.setQueryData<PlanDetail | null>(planKeys.detail(plan.id), (old) =>
+        old ? { ...old, brief: { content: briefText, updated_at: savedAt } } : old,
+      )
+      void queryClient.invalidateQueries({ queryKey: planKeys.team(team.id) })
+      setBriefDoc(updatedDoc)
+      clearBriefDraft(briefDoc.id)
+      setEditingBrief(false)
+    } catch (error) {
+      saved()
+      setBriefLoadError(error)
+      toast.error(errorMessage(error))
+    } finally {
+      setSavingBrief(false)
+    }
+  }
   const create = useMutation({
     mutationFn: async (kind: 'doc' | 'diagram') => {
       const input = { teamId: team.id, workspaceId: null, folderId: plan.folder_id, title: kind === 'doc' ? 'Untitled doc' : 'Untitled whiteboard' }
@@ -459,7 +694,49 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
   // Enough text for 4 lines; the card cuts it there (owner's choice) and the rest is one click away.
   const preview = plan.brief?.content.trim().replace(/\s+/g, ' ').slice(0, 600) || undefined
   const items: StackItem[] = [
-    ...(plan.brief_id ? [{ key: plan.brief_id, kind: 'brief' as const, title: brief?.title ?? 'Brief', preview, meta: updated(plan.brief?.updated_at ?? brief?.updated_at ?? plan.updated_at), to: docPath(team.slug, plan.brief_id) }] : []),
+    ...(plan.brief_id
+      ? [{
+          key: plan.brief_id,
+          kind: 'brief' as const,
+          title: brief?.title ?? 'Brief',
+          preview,
+          meta: updated(plan.brief?.updated_at ?? brief?.updated_at ?? plan.updated_at),
+          to: docPath(team.slug, plan.brief_id),
+          edit: { onClick: editBriefHere },
+          ...(editingBrief
+            ? {
+                quickEdit: {
+                  value: briefText,
+                  onChange: (value: string) => {
+                    setBriefText(value)
+                    setEditingPresence((current) => ({ ...current, recent: [] }))
+                  },
+                  onOpen: () => {
+                    if (!briefDoc) return false
+                    try {
+                      sessionStorage.setItem(briefDraftKey(briefDoc.id), JSON.stringify({ content: briefText, updatedAt: briefDoc.updated_at }))
+                      return true
+                    } catch (error) {
+                      console.error('[plans] Failed to preserve Brief draft', error)
+                      toast.error('Couldn’t keep your Brief draft in this tab. Copy it before opening the Brief.')
+                      return false
+                    }
+                  },
+                  onSave: () => void saveBriefInline(),
+                  onCancel: cancelBriefEdit,
+                  loading: briefLoading,
+                  loaded: Boolean(briefDoc),
+                  saving: savingBrief,
+                  canSave: Boolean(briefDoc) && briefText !== (briefDoc?.content.trim() ? briefDoc.content : BRIEF_PROMPT) && !lockedBy.length,
+                  error: briefLoadError ? errorMessage(briefLoadError) : undefined,
+                  lockedBy,
+                  recentlyEditingBy,
+                  onTyping: markTyping,
+                },
+              }
+            : {}),
+        }]
+      : []),
     ...(board ? [{ key: board.id, kind: 'whiteboard' as const, title: board.title, meta: updated(board.updated_at), to: diagramPath(team.slug, board.id) }] : []),
     ...[
       ...docs.filter((d) => d.folder_id === plan.folder_id && d.id !== plan.brief_id).map((d) => ({ key: d.id, kind: 'doc' as const, title: d.title, meta: updated(d.updated_at), to: docPath(team.slug, d.id), at: d.updated_at })),
@@ -469,36 +746,38 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
   if (items.length === 0) return null
 
   return (
-    <FileStack
-      items={items}
-      extra={
-        !board && (
-          <button
-            type="button"
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-dashed px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-            disabled={openBoard.isPending}
-            onClick={() => openBoard.mutate(plan.id, { onSuccess: (id) => void navigate(diagramPath(team.slug, id)) })}
-          >
-            <Presentation className="size-3.5" /> Start the whiteboard
-          </button>
-        )
-      }
-      newMenu={
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <NewFileButton disabled={create.isPending} />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={() => create.mutate('doc')}>
-              <FileText /> Doc
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => create.mutate('diagram')}>
-              <Presentation /> Whiteboard
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      }
-    />
+    <>
+      <FileStack
+        items={items}
+        extra={
+          !board && (
+            <button
+              type="button"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-dashed px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+              disabled={openBoard.isPending}
+              onClick={() => openBoard.mutate(plan.id, { onSuccess: (id) => void navigate(diagramPath(team.slug, id)) })}
+            >
+              <Presentation className="size-3.5" /> Start the whiteboard
+            </button>
+          )
+        }
+        newMenu={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <NewFileButton disabled={create.isPending} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => create.mutate('doc')}>
+                <FileText /> Doc
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => create.mutate('diagram')}>
+                <Presentation /> Whiteboard
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+      />
+    </>
   )
 }
 

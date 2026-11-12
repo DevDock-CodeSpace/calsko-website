@@ -23,7 +23,7 @@ import { workspaceTypes } from '@/features/teams/permissions'
 import { useCollectionView } from '@/features/collections/hooks'
 import { errorMessage } from '@/lib/errors'
 import { createLiveSeries, createLiveSession, updateLiveSession, type LiveSession } from '../api'
-import { useCalendarOps, useCanWriteLive } from '../hooks'
+import { useCalendarOps, useCanScheduleLive, useCanWriteLive } from '../hooks'
 import {
   describeSeries,
   generateStarts,
@@ -75,7 +75,7 @@ type ScheduleSessionDialogProps = {
  * Schedule (or edit) a meeting: title, audience, date, time, length, how often
  * it repeats (new meetings only), notes, and whether to put it in the
  * organizer's Google Calendar with everyone in the audience invited. Only
- * offered in scopes the user may write to.
+ * offered in scopes where the user may schedule.
  */
 export function ScheduleSessionDialog({
   workspaceId,
@@ -89,6 +89,7 @@ export function ScheduleSessionDialog({
   // Only the collection being looked at (everything, in a group without collections).
   const { workspaces } = useCollectionView()
   const canWrite = useCanWriteLive()
+  const canSchedule = useCanScheduleLive()
   const calendarOps = useCalendarOps()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -97,10 +98,13 @@ export function ScheduleSessionDialog({
   const scopes = editing
     ? []
     : workspaceId
-      ? canWrite(workspaceId)
+      ? canSchedule(workspaceId)
         ? [workspaceId]
         : []
-      : [...(canWrite(null) ? [GROUP_WIDE] : []), ...workspaces.filter((w) => canWrite(w.id)).map((w) => w.id)]
+      : [
+          ...(canSchedule(null) ? [GROUP_WIDE] : []),
+          ...workspaces.filter((w) => canSchedule(w.id) && (canWrite(w.id) || w.type === 'project')).map((w) => w.id),
+        ]
 
   const initial = () => {
     const start = session ? new Date(session.starts_at) : (defaultStart ?? nextFullHour(Date.now()))

@@ -1,9 +1,39 @@
 import type { Collection, WorkspaceSummary } from '@/features/workspaces/api'
+import type { StarterPagePreference } from '@/features/auth/api'
 import type { TeamType } from './api'
-import { chatPath, learningPath, teamPath } from './nav'
+import { chatPath, hasTeamIssues, learningPath, teamIssuesPath, teamPath, workspacePath } from './nav'
 
 /** Where a group opens (after signing in, or switching group or collection): its loader picks the page. */
-export const startPath = (slug: string) => `${teamPath(slug)}/start`
+export const startPath = (slug: string, options: { collectionSwitch?: boolean } = {}) =>
+  `${teamPath(slug)}/start${options.collectionSwitch ? '?collection=1' : ''}`
+
+/**
+ * A saved destination wins when it is still available to the user; stale or inaccessible workspaces
+ * fall back to the group's normal landing page.
+ */
+export function starterPagePath(
+  slug: string,
+  teamType: TeamType,
+  collection: Collection | null,
+  workspaces: WorkspaceSummary[],
+  visits: Record<string, number>,
+  preference: StarterPagePreference | null,
+): string {
+  if (preference?.type === 'chat') return chatPath(slug)
+  if (preference?.type === 'my-issues' && hasTeamIssues(teamType, workspaces)) return teamIssuesPath(slug)
+  if (preference?.type === 'project') {
+    const project = workspaces.find((workspace) => workspace.id === preference.workspaceId && workspace.type === 'project')
+    if (project) return workspacePath(slug, project.id)
+  }
+  if (preference?.type === 'course') {
+    const course = workspaces.find(
+      (workspace) =>
+        workspace.id === preference.workspaceId && workspace.type === 'course' && workspace.modules.includes('learning'),
+    )
+    if (course) return learningPath(slug, course.id)
+  }
+  return landingPath(slug, teamType, collection, workspaces, visits)
+}
 
 /**
  * The page a group opens on (owner's rule, 2026-10-26). The type is the collection in view's, else the

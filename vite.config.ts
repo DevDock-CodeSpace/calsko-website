@@ -10,6 +10,10 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   return {
     plugins: [react(), tailwindcss()],
+    build: {
+      // The performance check gates actual first-load gzip size; Vite's default warns on raw minified size.
+      chunkSizeWarningLimit: 650,
+    },
     define: {
       __POSTHOG_KEY__: JSON.stringify((env.POSTHOG_KEY ?? '').trim().replace(/^["']|["']$/g, '')),
     },

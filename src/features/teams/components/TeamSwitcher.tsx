@@ -45,7 +45,7 @@ export function TeamSwitcher() {
     if (collectionId) rememberCollectionView(teamId, collectionId)
     if (isMobile) setOpenMobile(false)
     // Through the start route: a learning collection or group opens your course, the rest open Chat.
-    navigate(startPath(slug))
+    navigate(startPath(slug, { collectionSwitch: teamId === team.id && collectionId !== undefined }))
   }
 
   // Collapsed to icons there is no room for the menu and the sidebar button side by side: the logo

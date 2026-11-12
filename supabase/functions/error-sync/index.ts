@@ -7,7 +7,8 @@
 //     at most once every 10 minutes (public.request_error_sync checks both, as the person).
 //
 // For each source: pull the errors since the last sync (pulled providers), record them, then write the
-// issues for errors that need one (at most 20 per source per run; AI when error_tracking_ai is on).
+// issues for errors that need one (at most 20 per source per run; AI when error_tracking_ai is on), and
+// post a summary into the group's chat when its errors feed is on (docs/CHAT_FEEDS.md).
 //
 // Secrets: ERROR_SYNC_SECRET (= the Vault secret 'error_sync_url'/'error_sync_secret' pair's secret),
 // GEMINI_API_KEY and the other ai-agent provider secrets for AI-written issues.
@@ -144,7 +145,28 @@ async function writeIssues(admin: SupabaseClient, source: DueSource, ai: AiProvi
   return made.reduce<number>((sum, n) => sum + n, 0)
 }
 
+/** The group's chat summary of this run (docs/CHAT_FEEDS.md); the database posts nothing when nothing happened. */
+async function postSummary(admin: SupabaseClient, source: DueSource, started: Date, result: SourceResult) {
+  const { error } = await admin.rpc('chat_post_error_summary', {
+    p_source: source.id,
+    p_ok: result.ok,
+    p_errors: result.errors,
+    p_issues: result.issues,
+    p_since: started.toISOString(),
+    p_message: result.message,
+  })
+  // A summary that can't be posted never fails the sync.
+  if (error) console.warn('[error-sync] chat summary failed', error.message)
+}
+
 async function syncSource(admin: SupabaseClient, source: DueSource, ai: AiProvider | null): Promise<SourceResult> {
+  const started = new Date()
+  const result = await runSource(admin, source, ai)
+  await postSummary(admin, source, started, result)
+  return result
+}
+
+async function runSource(admin: SupabaseClient, source: DueSource, ai: AiProvider | null): Promise<SourceResult> {
   const provider = PROVIDERS[source.provider]
   const until = new Date()
   let errors = 0

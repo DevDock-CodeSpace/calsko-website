@@ -5,7 +5,7 @@ import { SETTLED_STALE_MS } from '@/lib/query-client'
 import { supabase } from '@/lib/supabase'
 import type { Database, Tables, TablesInsert } from '@/types/database.types'
 
-export type WorkspaceRole = Database['public']['Enums']['workspace_role']
+export type WorkspaceRole = Database['public']['Enums']['workspace_role'] | 'developer'
 export type WorkspaceType = Database['public']['Enums']['workspace_type']
 /** Workspace tools. 'resources' is retired in the database (Docs replaced it). */
 export type WorkspaceModule = Exclude<Database['public']['Enums']['workspace_module'], 'resources'>
@@ -23,7 +23,7 @@ export type Workspace = Pick<
 }
 export type WorkspaceSummary = Pick<
   Tables<'workspaces'>,
-  'id' | 'title' | 'description' | 'type' | 'access' | 'collection_id' | 'updated_at'
+  'id' | 'title' | 'description' | 'type' | 'issue_key' | 'access' | 'collection_id' | 'updated_at'
 > & {
   /** Enabled tools (used by the team-level tool pages). */
   modules: WorkspaceModule[]
@@ -60,7 +60,7 @@ const teamContents = (teamId: string) => ({
       .select(
         `team_members(user_id),
          workspace_collections(id, name, type, position, workspace_collection_members(user_id)),
-         workspaces(id, title, description, type, access, collection_id, updated_at, workspace_modules(module),
+         workspaces(id, title, description, type, issue_key, access, collection_id, updated_at, workspace_modules(module),
            workspace_members(user_id, role, profile:profiles(display_name, avatar_url)))`,
       )
       .eq('id', teamId)
@@ -237,7 +237,12 @@ export async function deleteWorkspace(workspaceId: string) {
 export async function addWorkspaceMember(workspaceId: string, userId: string, role: WorkspaceRole) {
   // team_id is NOT NULL but always set by a DB trigger from the workspace (clients
   // have no INSERT privilege on it). Generated types can't see triggers, so omit it here.
-  const row: Omit<TablesInsert<'workspace_members'>, 'team_id'> = { workspace_id: workspaceId, user_id: userId, role }
+  const row: Omit<TablesInsert<'workspace_members'>, 'team_id'> = {
+    workspace_id: workspaceId,
+    user_id: userId,
+    // The generated Supabase enum types will include this migration's value after Dev type regeneration.
+    role: role as Database['public']['Enums']['workspace_role'],
+  }
   const { error } = await supabase.from('workspace_members').insert(row as TablesInsert<'workspace_members'>)
   if (error) {
     throw toDataError('add the member', error, { '23505': 'They’re already in this workspace.' })
@@ -247,7 +252,8 @@ export async function addWorkspaceMember(workspaceId: string, userId: string, ro
 export async function setWorkspaceRole(workspaceId: string, userId: string, role: WorkspaceRole) {
   const { data, error } = await supabase
     .from('workspace_members')
-    .update({ role })
+    // The generated Supabase enum types will include this migration's value after Dev type regeneration.
+    .update({ role: role as Database['public']['Enums']['workspace_role'] })
     .eq('workspace_id', workspaceId)
     .eq('user_id', userId)
     .select('user_id')
