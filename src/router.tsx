@@ -15,6 +15,7 @@ import { liveSessionLoader } from '@/features/live/loaders'
 import { githubCallbackLoader, githubTabLoader } from '@/features/repos/loaders'
 import { appIndexLoader, onboardingLoader, teamLoader, teamMembersLoader, teamStartLoader, workspaceLoader } from '@/features/teams/loaders'
 import { messagesLoader } from '@/features/messaging/loaders'
+import { teamSettingsLoader } from '@/features/feeds/loaders'
 import { AppLayout } from '@/layouts/AppLayout'
 import { APP_ROUTE_ID, appLoader } from '@/layouts/app-loader'
 import { queryClient } from '@/lib/query-client'
@@ -131,7 +132,7 @@ export const router = createBrowserRouter([
               // Where the group opens (after sign-in, or switching group or collection): its loader redirects.
               { path: 'start', loader: teamStartLoader },
               { path: 'members', loader: teamMembersLoader, lazy: async () => ({ Component: (await import('@/routes/team/TeamMembersPage')).TeamMembersPage }) },
-              { path: 'settings', lazy: async () => ({ Component: (await import('@/routes/team/TeamSettingsPage')).TeamSettingsPage }) },
+              { path: 'settings', loader: teamSettingsLoader, lazy: async () => ({ Component: (await import('@/routes/team/TeamSettingsPage')).TeamSettingsPage }) },
               // Team → Files (URL docs): group-wide docs and diagrams + those of every workspace the user can see.
               // Lazy page; filesLoader starts its queries alongside the chunk.
               { path: 'docs', loader: filesLoader, shouldRevalidate: filesShouldRevalidate, lazy: async () => ({ Component: (await import('@/routes/team/TeamDocsPage')).TeamDocsPage }) },

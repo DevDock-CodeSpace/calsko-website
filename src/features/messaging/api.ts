@@ -121,7 +121,7 @@ export const conversationRepliesQuery = (conversationId: string) =>
     queryFn: async (): Promise<Message[]> => {
       const { data, error } = await supabase
         .from('messages')
-        .select('id, conversation_id, team_id, author_id, parent_id, client_id, body, content, edited_at, deleted_at, created_at')
+        .select('id, conversation_id, team_id, author_id, bot, parent_id, client_id, body, content, edited_at, deleted_at, created_at')
         .eq('conversation_id', conversationId)
         .not('parent_id', 'is', null)
         .order('created_at')
@@ -173,7 +173,7 @@ export const messagesQuery = (conversationId: string, limit = PAGE_SIZE) =>
     queryFn: async (): Promise<Message[]> => {
       const { data, error } = await supabase
         .from('messages')
-        .select('id, conversation_id, team_id, author_id, parent_id, client_id, body, content, edited_at, deleted_at, created_at')
+        .select('id, conversation_id, team_id, author_id, bot, parent_id, client_id, body, content, edited_at, deleted_at, created_at')
         .eq('conversation_id', conversationId)
         .is('parent_id', null)
         .order('created_at', { ascending: false })

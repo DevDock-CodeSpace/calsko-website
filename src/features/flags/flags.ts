@@ -24,6 +24,8 @@ export const FEATURE_FLAGS = [
   // Error tracking and its sub-feature (AI-written issues).
   'error_tracking',
   'error_tracking_ai',
+  // Chat feeds: bots that post Calsko events, error summaries and outside alarms into channels.
+  'chat_feeds',
 ] as const
 
 export type FeatureFlag = (typeof FEATURE_FLAGS)[number]

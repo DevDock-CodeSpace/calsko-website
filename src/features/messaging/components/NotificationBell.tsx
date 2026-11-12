@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AtSign, Bell, Bookmark, MessageCircle } from 'lucide-react'
+import { AtSign, Bell, Bookmark, MessageCircle, Siren } from 'lucide-react'
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
@@ -87,17 +87,19 @@ export function NotificationBell() {
             {notifications.map((notification) => {
               const mention = notification.kind === 'mention'
               const reminder = notification.kind === 'reminder'
+              // A critical alert from a chat feed (an alarm posted into a channel).
+              const alert = notification.kind === 'alert'
               const where = displayName(titleOf(notification.conversation_id))
-              const Icon = reminder ? Bookmark : mention ? AtSign : MessageCircle
+              const Icon = reminder ? Bookmark : mention ? AtSign : alert ? Siren : MessageCircle
               return (
                 <li key={notification.id}>
                   <button type="button" onClick={() => void go(notification)} className="flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted">
-                    <span className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full ${mention || reminder ? 'bg-brand/10 text-brand' : 'bg-muted text-muted-foreground'}`}>
+                    <span className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full ${alert ? 'bg-destructive/10 text-destructive' : mention || reminder ? 'bg-brand/10 text-brand' : 'bg-muted text-muted-foreground'}`}>
                       <Icon className="size-3.5" />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">
-                        {reminder ? (notification.reminder?.title ?? 'Note') : mention ? `Mentioned you in ${where}` : `New message in ${where}`}
+                        {reminder ? (notification.reminder?.title ?? 'Note') : mention ? `Mentioned you in ${where}` : alert ? `Critical alert in ${where}` : `New message in ${where}`}
                       </span>
                       <span className="block text-xs text-muted-foreground">
                         {reminder && 'Note · '}
