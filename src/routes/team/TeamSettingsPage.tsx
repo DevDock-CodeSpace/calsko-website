@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAuth } from '@/features/auth/hooks'
 import { TeamReposSection } from '@/features/repos/components/TeamReposSection'
+import { ChatFeedsSection } from '@/features/feeds/components/ChatFeedsSection'
 import {
   deleteTeam,
   removeTeamLogo,
@@ -28,7 +29,7 @@ import { defaultWorkspaceType, teamRoleName, teamTypes, workspaceTypes } from '@
 import { errorMessage } from '@/lib/errors'
 
 export function TeamSettingsPage() {
-  const { team, role, can } = useCurrentTeam()
+  const { team, role, can, features } = useCurrentTeam()
 
   return (
     <>
@@ -39,6 +40,7 @@ export function TeamSettingsPage() {
         {team.type !== 'development' && <CatalogSettingsSection />}
         {can.canManageWorkspaces && <CollectionsSection />}
         <TeamReposSection />
+        {can.isAdmin && features.includes('chat_feeds') && <ChatFeedsSection />}
         {(can.canLeave || can.canDelete) && <DangerSection />}
       </div>
     </>

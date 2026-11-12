@@ -242,6 +242,7 @@ const AFFECTS: Record<string, QueryKey[] | ((change: Change) => QueryKey[])> = {
   thread_reads: [['messaging', 'thread-unread']],
   conversation_preferences: [['messaging', 'preferences']],
   notifications: [['messaging', 'notifications']],
+  chat_feeds: [['messaging', 'feeds']],
   // Only the owner receives these (RLS). The scheduler firing one updates it too (notified_at).
   reminders: [['reminders', 'list']],
 }

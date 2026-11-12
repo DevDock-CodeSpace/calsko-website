@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.17"
+    PostgrestVersion: "14.18"
   }
   graphql_public: {
     Tables: {
@@ -163,6 +163,73 @@ export type Database = {
             columns: ["workspace_id"]
             isOneToOne: false
             referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chat_feeds: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          created_by: string | null
+          enabled: boolean
+          event_targets: Json
+          events: string[]
+          id: string
+          kind: string
+          last_posted_at: string | null
+          name: string
+          projects: string[]
+          team_id: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          event_targets?: Json
+          events?: string[]
+          id?: string
+          kind: string
+          last_posted_at?: string | null
+          name: string
+          projects?: string[]
+          team_id: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          event_targets?: Json
+          events?: string[]
+          id?: string
+          kind?: string
+          last_posted_at?: string | null
+          name?: string
+          projects?: string[]
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_feeds_conversation_fkey"
+            columns: ["conversation_id", "team_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id", "team_id"]
+          },
+          {
+            foreignKeyName: "chat_feeds_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_feeds_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
             referencedColumns: ["id"]
           },
         ]
@@ -795,6 +862,7 @@ export type Database = {
           issue_id: string | null
           last_seen: string
           needs_issue: boolean
+          people: number
           previous_issue_id: string | null
           raw: string
           source_id: string
@@ -813,6 +881,7 @@ export type Database = {
           issue_id?: string | null
           last_seen: string
           needs_issue?: boolean
+          people?: number
           previous_issue_id?: string | null
           raw?: string
           source_id: string
@@ -831,6 +900,7 @@ export type Database = {
           issue_id?: string | null
           last_seen?: string
           needs_issue?: boolean
+          people?: number
           previous_issue_id?: string | null
           raw?: string
           source_id?: string
@@ -1118,18 +1188,21 @@ export type Database = {
       github_connect_states: {
         Row: {
           created_at: string
+          installations: Json | null
           state: string
           team_id: string
           user_id: string
         }
         Insert: {
           created_at?: string
+          installations?: Json | null
           state?: string
           team_id: string
           user_id: string
         }
         Update: {
           created_at?: string
+          installations?: Json | null
           state?: string
           team_id?: string
           user_id?: string
@@ -2377,8 +2450,9 @@ export type Database = {
       }
       messages: {
         Row: {
-          author_id: string
+          author_id: string | null
           body: Json
+          bot: Json | null
           client_id: string
           content: string
           conversation_id: string
@@ -2390,8 +2464,9 @@ export type Database = {
           team_id: string
         }
         Insert: {
-          author_id?: string
+          author_id?: string | null
           body: Json
+          bot?: Json | null
           client_id: string
           content: string
           conversation_id: string
@@ -2403,8 +2478,9 @@ export type Database = {
           team_id: string
         }
         Update: {
-          author_id?: string
+          author_id?: string | null
           body?: Json
+          bot?: Json | null
           client_id?: string
           content?: string
           conversation_id?: string
@@ -3399,6 +3475,35 @@ export type Database = {
         Args: { p_session_id: string }
         Returns: boolean
       }
+      chat_post_error_summary: {
+        Args: {
+          p_errors: number
+          p_issues: number
+          p_message: string
+          p_ok: boolean
+          p_since: string
+          p_source: string
+        }
+        Returns: undefined
+      }
+      chat_webhook_for_token: {
+        Args: { p_feed: string; p_token: string }
+        Returns: {
+          id: string
+          name: string
+        }[]
+      }
+      chat_webhook_post: {
+        Args: {
+          p_feed: string
+          p_level: string
+          p_source: string
+          p_text: string
+          p_title: string
+          p_url: string
+        }
+        Returns: string
+      }
       conversation_unread_counts: {
         Args: { p_team_id: string }
         Returns: {
@@ -3410,6 +3515,10 @@ export type Database = {
       create_channel: {
         Args: { p_description?: string; p_name: string; p_team_id: string }
         Returns: string
+      }
+      create_chat_webhook: {
+        Args: { p_conversation?: string; p_name: string; p_team: string }
+        Returns: Json
       }
       create_course: {
         Args: {
@@ -3525,6 +3634,10 @@ export type Database = {
       }
       email_finish_batch: { Args: { p_results: Json }; Returns: undefined }
       email_prepare_batch: { Args: never; Returns: undefined }
+      enable_chat_feed: {
+        Args: { p_conversation?: string; p_kind: string; p_team: string }
+        Returns: string
+      }
       enabled_features: {
         Args: { t: Database["public"]["Tables"]["teams"]["Row"] }
         Returns: string[]
@@ -3711,6 +3824,7 @@ export type Database = {
       }
       request_error_sync: { Args: { p_source_id: string }; Returns: undefined }
       revoke_course_code: { Args: { p_code_id: string }; Returns: undefined }
+      rotate_chat_webhook_token: { Args: { p_feed: string }; Returns: string }
       rotate_error_source_token: {
         Args: { p_source_id: string }
         Returns: string
@@ -3757,8 +3871,9 @@ export type Database = {
           p_parent_id?: string
         }
         Returns: {
-          author_id: string
+          author_id: string | null
           body: Json
+          bot: Json | null
           client_id: string
           content: string
           conversation_id: string
@@ -3867,7 +3982,7 @@ export type Database = {
         | "done"
         | "canceled"
       reminder_status: "pending" | "completed" | "cancelled"
-      team_role: "owner" | "admin" | "teacher" | "member"
+      team_role: "owner" | "admin" | "teacher" | "developer" | "member"
       team_type: "development" | "learning" | "general"
       workspace_access: "members" | "collection" | "group"
       workspace_module:
@@ -3879,7 +3994,7 @@ export type Database = {
         | "learning"
         | "exercises"
         | "resources"
-      workspace_role: "lead" | "member"
+      workspace_role: "lead" | "developer" | "member"
       workspace_type: "project" | "course" | "general"
     }
     CompositeTypes: {
@@ -4022,7 +4137,7 @@ export const Constants = {
       ],
       plan_status: ["not_started", "in_progress", "paused", "done", "canceled"],
       reminder_status: ["pending", "completed", "cancelled"],
-      team_role: ["owner", "admin", "teacher", "member"],
+      team_role: ["owner", "admin", "teacher", "developer", "member"],
       team_type: ["development", "learning", "general"],
       workspace_access: ["members", "collection", "group"],
       workspace_module: [
@@ -4035,7 +4150,7 @@ export const Constants = {
         "exercises",
         "resources",
       ],
-      workspace_role: ["lead", "member"],
+      workspace_role: ["lead", "developer", "member"],
       workspace_type: ["project", "course", "general"],
     },
   },

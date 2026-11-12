@@ -28,6 +28,7 @@ import {
   type Message,
   type UnreadCount,
 } from '../api'
+import { sameBot } from '../bot'
 import { useSendMessage, useSetNotificationMode } from '../hooks'
 import { displayName, formatDay, GROUP_WINDOW_MS, isPendingMessage, sameDay } from '../names'
 import { AddGroupMemberDialog } from './AddGroupMemberDialog'
@@ -310,7 +311,7 @@ export function ConversationView({ conversationId, kind, description, teamId, te
               {messages.map((message: Message, index) => {
                 const previous = messages[index - 1]
                 const newDay = !previous || !sameDay(previous.created_at, message.created_at)
-                const compact = !newDay && previous.author_id === message.author_id && !previous.deleted_at && !message.deleted_at && Date.parse(message.created_at) - Date.parse(previous.created_at) < GROUP_WINDOW_MS
+                const compact = !newDay && previous.author_id === message.author_id && sameBot(previous, message) && !previous.deleted_at && !message.deleted_at && Date.parse(message.created_at) - Date.parse(previous.created_at) < GROUP_WINDOW_MS
                 return (
                   <div key={message.id}>
                     {newDay && (

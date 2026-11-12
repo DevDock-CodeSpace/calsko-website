@@ -46,6 +46,7 @@ export function useSendMessage(conversationId: string, teamId: string, limit: nu
         conversation_id: conversationId,
         team_id: teamId,
         author_id: user.id,
+        bot: null,
         parent_id: null,
         client_id: input.clientId,
         body: input.body,

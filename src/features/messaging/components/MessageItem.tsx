@@ -6,6 +6,7 @@ import { PersonAvatar } from '@/components/PersonRow'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { TeamMember } from '@/features/teams/api'
+import { useCurrentTeam } from '@/features/teams/hooks'
 import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import {
@@ -18,8 +19,10 @@ import {
   type MessageAttachment,
   type Reaction,
 } from '../api'
+import { botBubbleClass, botOf } from '../bot'
 import { authorName, formatFullDate, formatTime, isPendingMessage, MESSAGE_REACTIONS, messagePermalink } from '../names'
 import { AttachmentItem } from './AttachmentItem'
+import { BotAvatar, BotFooter } from './BotParts'
 import { MessageBody } from './MessageBody'
 import { MessageEditor } from './MessageEditor'
 import { ThreadReplyBox } from './ThreadReplyBox'
@@ -49,6 +52,7 @@ const toolbarButton = 'size-7 text-muted-foreground hover:text-foreground'
 
 export function MessageItem({ message, conversationId, teamId, teamSlug, people, participants, currentUserId, pinned, reactions, attachments, replies, threadUnread, compact, imageUrls, imagesLoading }: Props) {
   const queryClient = useQueryClient()
+  const { can } = useCurrentTeam()
   const [threadOpen, setThreadOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -78,16 +82,20 @@ export function MessageItem({ message, conversationId, teamId, teamSlug, people,
       () => toast.error('Could not copy the link.'),
     )
   }
-  const mine = message.author_id === currentUserId
+  // A bot's message (a chat feed: Calsko events, error summaries, outside alarms) has no author.
+  const bot = botOf(message.bot)
+  const mine = !bot && message.author_id === currentUserId
   const sending = isPendingMessage(message.id)
   const deleted = message.deleted_at !== null
   const person = people.find((item) => item.user_id === message.author_id)
-  const name = mine ? 'You' : authorName(message.author_id, people)
+  const name = bot ? bot.name : mine ? 'You' : authorName(message.author_id, people)
+  // Authors delete their own messages; group owners and admins also a bot's (a noisy alarm).
+  const canDelete = mine || (bot !== null && can.isAdmin)
   const time = formatTime(message.created_at)
   const mentionNames = people.flatMap((item) => (item.profile?.display_name ? [item.profile.display_name] : []))
   // Yours sit on the right, everyone else's on the left. Avatar and name only for other people,
   // and only with more than two people here: in a one-to-one chat you know who wrote it.
-  const showAuthor = !mine && participants.length > 2
+  const showAuthor = bot !== null || (!mine && participants.length > 2)
   // Files sent without any text: show just the files, not an empty bubble.
   const filesOnly = !deleted && attachments.length > 0 && message.body !== null && !JSON.stringify(message.body).includes('"type":"text"')
 
@@ -141,12 +149,8 @@ export function MessageItem({ message, conversationId, teamId, teamSlug, people,
         <ToolbarButton label="Reply in thread" onClick={() => setThreadOpen((open) => !open)}><MessageSquare /></ToolbarButton>
         <ToolbarButton label="Copy link to message" onClick={copyLink}><Link2 /></ToolbarButton>
         <ToolbarButton label={pinned ? 'Unpin message' : 'Pin message'} onClick={() => pin.mutate()} active={pinned}><Pin className={pinned ? 'fill-current' : undefined} /></ToolbarButton>
-        {mine && (
-          <>
-            <ToolbarButton label="Edit message" onClick={() => setEditing(true)}><Pencil /></ToolbarButton>
-            <ToolbarButton label="Delete message" onClick={() => remove.mutate()} disabled={remove.isPending}><Trash2 /></ToolbarButton>
-          </>
-        )}
+        {mine && <ToolbarButton label="Edit message" onClick={() => setEditing(true)}><Pencil /></ToolbarButton>}
+        {canDelete && <ToolbarButton label="Delete message" onClick={() => remove.mutate()} disabled={remove.isPending}><Trash2 /></ToolbarButton>}
       </div>
     ) : null
 
@@ -164,8 +168,10 @@ export function MessageItem({ message, conversationId, teamId, teamSlug, people,
         <div className="w-8 shrink-0 pt-0.5">
           {compact ? (
             <time className="block pt-1 text-right font-mono text-[10px] text-transparent group-hover:text-muted-foreground" dateTime={message.created_at} title={formatFullDate(message.created_at)}>{time}</time>
+          ) : bot ? (
+            <BotAvatar bot={bot} />
           ) : (
-            <PersonAvatar profile={person?.profile ?? null} userId={message.author_id} className="size-8" fallbackClassName="text-xs" />
+            <PersonAvatar profile={person?.profile ?? null} userId={message.author_id ?? undefined} className="size-8" fallbackClassName="text-xs" />
           )}
         </div>
       )}
@@ -173,6 +179,7 @@ export function MessageItem({ message, conversationId, teamId, teamSlug, people,
         {!compact && (
           <div className={cn('flex flex-wrap items-baseline gap-x-2 px-1 pb-0.5', mine && 'justify-end')}>
             {showAuthor && <span className="text-sm font-semibold">{name}</span>}
+            {bot && <span className="rounded bg-muted px-1 py-px text-[10px] font-medium tracking-wide text-muted-foreground uppercase">App</span>}
             <time className="font-mono text-[11px] text-muted-foreground" dateTime={message.created_at} title={formatFullDate(message.created_at)}>{time}</time>
             {message.edited_at && !deleted && <span className="text-xs text-muted-foreground">(edited)</span>}
             {sending && <span className="text-xs text-muted-foreground">Sending…</span>}
@@ -191,11 +198,14 @@ export function MessageItem({ message, conversationId, teamId, teamSlug, people,
         ) : (
           // A chat bubble, as in Teams or WhatsApp: yours tinted, everyone else's grey. Its actions sit beside it.
           <div className="relative w-fit max-w-full">
-            <div className={cn('rounded-2xl px-3 py-1.5', mine ? 'bg-brand/15 dark:bg-brand/30' : 'bg-muted', deleted && 'bg-transparent ring-1 ring-border')}>
+            <div className={cn('rounded-2xl px-3 py-1.5', mine ? 'bg-brand/15 dark:bg-brand/30' : bot ? botBubbleClass(bot) : 'bg-muted', deleted && 'bg-transparent ring-1 ring-border')}>
               {deleted ? (
                 <p className="text-sm text-muted-foreground italic">This message was deleted.</p>
               ) : (
-                <MessageBody body={message.body} fallback={message.content} mentionNames={mentionNames} />
+                <>
+                  <MessageBody body={message.body} fallback={message.content} mentionNames={mentionNames} />
+                  {bot && <BotFooter bot={bot} />}
+                </>
               )}
             </div>
             {actions}
