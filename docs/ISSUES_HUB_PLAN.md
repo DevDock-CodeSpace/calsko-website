@@ -39,6 +39,8 @@ Deleting a plan deletes its folder and everything in it, after a warning; its is
 
 - `plans`: `team_id`, name, description (TipTap), lead, status (Not started / In progress / Paused / Done / Canceled), start and
   target dates. Group members read and create; the lead and group owners/admins edit and delete.
+- When an issue in a plan enters In Progress or In Review, a Not started plan automatically becomes In Progress. Other plan
+  statuses are not changed automatically.
 - `issues.plan_id`: the plan must be in the issue's group (`check_issue`). Plan property, filter, group-by and chip on issues.
 - Plan page: description, progress, **Up for grabs** (unassigned open issues with Assign to me), issues by person, New issue.
 - Hub tabs: **My issues** (default), **Plans**, **Sprints** (the current one grouped by person), **Views**. Import moved here:

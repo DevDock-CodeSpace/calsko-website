@@ -253,7 +253,7 @@ function PlanDetails({ plan, issues, people, plans, canEdit }: { plan: PlanDetai
           </div>
         </div>
 
-        <PlanFiles plan={plan} />
+        <PlanFiles key={`${plan.id}:${plan.brief_id ?? ''}`} plan={plan} />
 
         <section aria-labelledby="up-for-grabs">
           <div className="flex flex-wrap items-baseline justify-between gap-2 border-b pb-1.5">
@@ -553,35 +553,44 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
   const [{ data: docs }, { data: boards }] = useSuspenseQueries({ queries: [teamDocsQuery(team.id), teamDiagramsQuery(team.id)] })
   const openBoard = useOpenPlanWhiteboard(team.id)
   const [now] = useState(Date.now)
-  const [editingBrief, setEditingBrief] = useState(false)
+  const [draftRestore] = useState(() => {
+    if (!plan.brief_id) return null
+    try {
+      return { docId: plan.brief_id, draft: readBriefDraft(plan.brief_id) } as const
+    } catch (error) {
+      return { docId: plan.brief_id, error } as const
+    }
+  })
+  const restoredDraft = draftRestore?.docId === plan.brief_id && 'draft' in draftRestore ? draftRestore.draft : null
+  const [editingBrief, setEditingBrief] = useState(Boolean(restoredDraft))
   const [briefDoc, setBriefDoc] = useState<Doc | null>(null)
-  const [briefText, setBriefText] = useState('')
-  const [briefLoadError, setBriefLoadError] = useState<unknown>()
-  const [briefLoading, setBriefLoading] = useState(false)
+  const [briefText, setBriefText] = useState(restoredDraft?.content ?? '')
+  const [briefLoadError, setBriefLoadError] = useState<unknown>(
+    draftRestore?.docId === plan.brief_id && 'error' in draftRestore ? draftRestore.error : undefined,
+  )
+  const [briefLoading, setBriefLoading] = useState(Boolean(restoredDraft))
   const [savingBrief, setSavingBrief] = useState(false)
-  const [recentlyEditingBy, setRecentlyEditingBy] = useState<string[]>([])
+  const [editingPresence, setEditingPresence] = useState<{ current: string[]; recent: string[] }>({ current: [], recent: [] })
   const { lockedBy, markTyping } = useOthersTyping(
     `doc:${briefDoc?.id ?? plan.brief_id ?? ''}`,
     Boolean(editingBrief && (briefDoc?.access_level ?? 0) >= 2),
   )
-  useEffect(() => {
-    if (lockedBy.length > 0) setRecentlyEditingBy(lockedBy)
-  }, [lockedBy])
+  if (lockedBy.length > 0 && lockedBy !== editingPresence.current) {
+    setEditingPresence({ current: lockedBy, recent: lockedBy })
+  }
+  const recentlyEditingBy = editingPresence.recent
   useEffect(() => {
     const docId = plan.brief_id
-    if (!docId) return
-    let draft: BriefDraft | null
-    try {
-      draft = readBriefDraft(docId)
-    } catch (error) {
+    if (!docId || draftRestore?.docId !== docId) return
+    if ('error' in draftRestore) {
+      const error = draftRestore.error
       console.error('[plans] Failed to restore Brief draft', error)
       toast.error('Couldn’t restore your Brief draft from this tab.')
       return
     }
+    const draft = draftRestore.draft
     if (!draft) return
-    setEditingBrief(true)
-    setBriefText(draft.content)
-    setBriefLoading(true)
+    let active = true
     void queryClient
       .fetchQuery(documentQuery(docId))
       .then((doc) => {
@@ -590,11 +599,18 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
         if (!supportsPlainBriefEdit(doc.body)) {
           throw new Error('This Brief has formatting. Cancel and choose Open to edit it without losing that formatting.')
         }
-        setBriefDoc({ ...doc, updated_at: draft.updatedAt })
+        if (active) setBriefDoc({ ...doc, updated_at: draft.updatedAt })
       })
-      .catch((error: unknown) => setBriefLoadError(error))
-      .finally(() => setBriefLoading(false))
-  }, [plan.brief_id, queryClient])
+      .catch((error: unknown) => {
+        if (active) setBriefLoadError(error)
+      })
+      .finally(() => {
+        if (active) setBriefLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [draftRestore, plan.brief_id, queryClient])
   const editBriefHere = () => {
     const docId = plan.brief_id
     if (!docId) return
@@ -602,7 +618,7 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
     setBriefText('')
     setBriefLoadError(undefined)
     setBriefLoading(true)
-    setRecentlyEditingBy([])
+    setEditingPresence((current) => ({ ...current, recent: [] }))
     setEditingBrief(true)
     void queryClient
       .fetchQuery(documentQuery(docId))
@@ -693,7 +709,7 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
                   value: briefText,
                   onChange: (value: string) => {
                     setBriefText(value)
-                    setRecentlyEditingBy([])
+                    setEditingPresence((current) => ({ ...current, recent: [] }))
                   },
                   onOpen: () => {
                     if (!briefDoc) return false
