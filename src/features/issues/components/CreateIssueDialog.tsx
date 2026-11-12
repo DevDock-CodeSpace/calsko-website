@@ -9,8 +9,9 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { IMAGE_TYPES, imageProblem } from '@/features/docs/api'
 import { useCurrentTeam } from '@/features/teams/hooks'
 import { issuePath } from '@/features/teams/nav'
+import { errorMessage } from '@/lib/errors'
 import type { Json } from '@/types/database.types'
-import { createIssue, issueKeys, type Issue, type IssuePriority, type IssueStatus } from '../api'
+import { createIssue, issueKeys, syncIssueHierarchy, updateIssue, type Issue, type IssuePriority, type IssueStatus } from '../api'
 import { cycleTitle } from '../cycles'
 import { useIssueContext } from '../hooks'
 import { imageNode, removeIssueImages, uploadIssueImage } from '../images'
@@ -26,7 +27,7 @@ import { PriorityIcon } from './PriorityIcon'
 import { PriorityPicker } from './PriorityPicker'
 import { StatusIcon } from './StatusIcon'
 import { StatusPicker } from './StatusPicker'
-import { ownWrite } from '@/lib/realtime'
+import { ownSave, ownWrite } from '@/lib/realtime'
 import { GitHubMark } from '@/features/repos/components/GitHubMark'
 import type { Workspace } from '@/features/workspaces/api'
 
@@ -84,6 +85,8 @@ export function CreateIssueDialogForm({
   const { workspace, members, labels, cycles, repos, plans, canManage, userId } = context
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const defaultRepoId =
+    parent?.repo_id ?? (repos.length === 1 && repos[0].github_repo_id && repos[0].installation_id ? repos[0].id : null)
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -92,7 +95,7 @@ export function CreateIssueDialogForm({
   const [assigneeId, setAssigneeId] = useState<string | null>(null)
   const [labelIds, setLabelIds] = useState<string[]>([])
   const [cycleId, setCycleId] = useState<string | null>(initialCycle)
-  const [repoId, setRepoId] = useState<string | null>(parent?.repo_id ?? null)
+  const [repoId, setRepoId] = useState<string | null>(defaultRepoId)
   // A sub-issue is in its parent's plan (the database sets it either way).
   const [planId, setPlanId] = useState<string | null>(parent ? parent.plan_id : initialPlan)
 
@@ -143,7 +146,7 @@ export function CreateIssueDialogForm({
     setAssigneeId(null)
     setLabelIds([])
     setCycleId(initialCycle)
-    setRepoId(parent?.repo_id ?? null)
+    setRepoId(defaultRepoId)
     setPlanId(parent ? parent.plan_id : initialPlan)
   }
 
@@ -152,6 +155,15 @@ export function CreateIssueDialogForm({
       const paths: string[] = []
       try {
         for (const { file } of attachments) paths.push(await uploadIssueImage(workspace.id, file))
+        if (parent && !parent.repo_id && repoId) {
+          const done = ownSave('issues', parent.id)
+          try {
+            done(await updateIssue(parent.id, { repo_id: repoId }))
+          } catch (error) {
+            done()
+            throw error
+          }
+        }
         const made = await createIssue({
           workspaceId: workspace.id,
           title,
@@ -177,18 +189,25 @@ export function CreateIssueDialogForm({
         throw error
       }
     },
-    onSuccess: async ({ number }) => {
+    onSuccess: async ({ id, number }) => {
       // The lists it shows up in, and an open parent (a new sub-issue).
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: issueKeys.workspace(workspace.id) }),
         queryClient.invalidateQueries({ queryKey: ['issues', 'team'] }),
         ...(parent ? [queryClient.invalidateQueries({ queryKey: issueKeys.detail(workspace.id, parent.number) })] : []),
       ])
-      const id = issueIdentifier(workspace.issue_key, number)
-      toast.success(`${id} created`, {
+      const identifier = issueIdentifier(workspace.issue_key, number)
+      toast.success(`${identifier} created`, {
         description: title.trim(),
         action: { label: 'View', onClick: () => void navigate(issuePath(team.slug, workspace.id, number)) },
       })
+      if (repoId) {
+        void syncIssueHierarchy(id).catch((error) =>
+          toast.error(`Created in Calsko, but GitHub nesting couldn’t be synced: ${errorMessage(error)}`),
+        )
+      } else if (parent) {
+        toast.error('Choose the same repository for the parent and sub-issue to sync their nesting to GitHub.')
+      }
       reset()
       onOpenChange(false)
     },

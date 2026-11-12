@@ -212,8 +212,11 @@ const githubErrors: Record<string, string> = {
   repo_not_found: 'The Calsko GitHub App can’t see that repository. Give it access on GitHub first.',
   not_found: 'That no longer exists, or you don’t have access to it.',
   no_repo: 'Set the issue’s repository first (this project has several).',
+  repo_mismatch: 'The parent and sub-issue must use the same repository to sync their nesting to GitHub.',
   repo_not_connected: 'That repository isn’t connected to GitHub. Add it from GitHub in Group settings → Repositories.',
   base_branch_unset: 'Choose a base branch in this project’s GitHub settings before creating issue branches.',
+  issues_permission: 'The Calsko GitHub App needs Issues read/write permission. Update its permissions on GitHub and reconnect it.',
+  duplicate_issue: 'More than one GitHub issue matches this Calsko issue. Resolve the duplicate before syncing again.',
   base_missing: 'The project’s base branch doesn’t exist on GitHub. Check the branch settings on the GitHub tab.',
   github_error: 'GitHub didn’t respond as expected. Please try again.',
 }
