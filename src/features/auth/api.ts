@@ -15,6 +15,83 @@ export type Profile = Tables<'profiles'>
 
 export const AUTH_CALLBACK_PATH = '/auth/callback'
 
+export type StarterPagePreference =
+  | { type: 'chat' }
+  | { type: 'my-issues' }
+  | { type: 'project' | 'course'; workspaceId: string }
+
+const STARTER_PAGES_METADATA_KEY = 'devdock:starter-pages'
+
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
+}
+
+function parseStarterPage(value: unknown): StarterPagePreference | null {
+  const record = objectValue(value)
+  if (!record) return null
+  if (record.type === 'chat' || record.type === 'my-issues') return { type: record.type }
+  if ((record.type === 'project' || record.type === 'course') && typeof record.workspaceId === 'string') {
+    return { type: record.type, workspaceId: record.workspaceId }
+  }
+  return null
+}
+
+function sameStarterPage(a: StarterPagePreference | null, b: StarterPagePreference | null): boolean {
+  if (!a || !b) return a === b
+  if (a.type !== b.type) return false
+  return !('workspaceId' in a) || ('workspaceId' in b && a.workspaceId === b.workspaceId)
+}
+
+function starterPagesFromMetadata(metadata: unknown): Record<string, unknown> {
+  return objectValue(objectValue(metadata)?.[STARTER_PAGES_METADATA_KEY]) ?? {}
+}
+
+function authPreferenceError(action: string, error: unknown): Error {
+  logError(`[auth] Failed to ${action}`, error)
+  return new Error(`Couldn’t ${action}. Please try again.`, { cause: error })
+}
+
+/** The current user's optional, account-synced starting page for one group. */
+export const starterPagePreferenceQuery = (userId: string, teamId: string) =>
+  queryOptions({
+    queryKey: ['auth', 'starter-page', userId, teamId],
+    staleTime: SETTLED_STALE_MS,
+    queryFn: async (): Promise<StarterPagePreference | null> => {
+      const { data, error } = await supabase.auth.getUser()
+      if (error) throw authPreferenceError('load your starter page', error)
+      if (!data.user || data.user.id !== userId) {
+        throw authPreferenceError('load your starter page', new Error('The signed-in account changed.'))
+      }
+      return parseStarterPage(starterPagesFromMetadata(data.user.user_metadata)[teamId])
+    },
+  })
+
+/** Saves or clears the current user's starting page for one group in their account metadata. */
+export async function saveStarterPagePreference(
+  userId: string,
+  teamId: string,
+  preference: StarterPagePreference | null,
+): Promise<StarterPagePreference | null> {
+  const { data, error } = await supabase.auth.getUser()
+  if (error) throw authPreferenceError('save your starter page', error)
+  if (!data.user || data.user.id !== userId) {
+    throw authPreferenceError('save your starter page', new Error('The signed-in account changed.'))
+  }
+
+  const metadata = objectValue(data.user.user_metadata) ?? {}
+  const starterPages = starterPagesFromMetadata(metadata)
+  if (sameStarterPage(parseStarterPage(starterPages[teamId]), preference)) return preference
+  const nextStarterPages = { ...starterPages }
+  if (preference) nextStarterPages[teamId] = preference
+  else delete nextStarterPages[teamId]
+
+  const { error: updateError } = await supabase.auth.updateUser({
+    data: { ...metadata, [STARTER_PAGES_METADATA_KEY]: nextStarterPages },
+  })
+  if (updateError) throw authPreferenceError('save your starter page', updateError)
+  return preference
+}
+
 /**
  * The session from this tab (or, when remembered, the browser), refreshed if expired. Good for deciding what
  * UI to show; it is not an authorization check. Postgres RLS is.
