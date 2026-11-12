@@ -1,8 +1,10 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useAuth } from '@/features/auth/hooks'
 import { useCanWriteDocs } from '@/features/docs/hooks'
+import { useCurrentTeam } from '@/features/teams/hooks'
+import { myWorkspaceRolesQuery, teamCollectionsQuery, teamWorkspacesQuery } from '@/features/workspaces/api'
 import { errorMessage } from '@/lib/errors'
 import { liveSessionQuery, seriesSessionsQuery, type LiveSession } from './api'
 import { flushCalendarQueue, refreshRsvps, runCalendarOps, type CalendarOp } from './calendar'
@@ -13,6 +15,33 @@ import { logError } from '@/lib/error-tracking'
  * policies use the same private.can_write_document() as docs. UI only.
  */
 export const useCanWriteLive = useCanWriteDocs
+
+/** Workspace Developers may schedule only in their Development Space; other writers follow document access. */
+export function useCanScheduleLive() {
+  const { user } = useAuth()
+  const { team } = useCurrentTeam()
+  const canWrite = useCanWriteLive()
+  const workspaces = useSuspenseQuery(teamWorkspacesQuery(team.id)).data
+  const collections = useSuspenseQuery(teamCollectionsQuery(team.id)).data
+  const workspaceRoles = useSuspenseQuery(myWorkspaceRolesQuery(team.id, user.id)).data
+  const developmentCollectionIds = new Set(
+    collections.filter((collection) => collection.type === 'development').map((collection) => collection.id),
+  )
+  return (workspaceId: string | null) => {
+    if (canWrite(workspaceId)) return true
+    if (workspaceId === null) return false
+    return workspaces.some(
+      (workspace) =>
+        workspace.id === workspaceId &&
+        workspace.modules.includes('live') &&
+        team.type !== 'learning' &&
+        workspace.type === 'general' &&
+        workspaceRoles[workspace.id] === 'developer' &&
+        workspace.collection_id !== null &&
+        developmentCollectionIds.has(workspace.collection_id),
+    )
+  }
+}
 
 /** The current time, updated every `intervalMs` (session status changes as time passes). */
 export function useNow(intervalMs = 30_000) {

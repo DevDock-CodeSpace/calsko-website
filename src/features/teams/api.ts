@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import type { Database, Tables } from '@/types/database.types'
 import { logError } from '@/lib/error-tracking'
 
-export type TeamRole = Database['public']['Enums']['team_role']
+export type TeamRole = Database['public']['Enums']['team_role'] | 'developer'
 export type TeamType = Database['public']['Enums']['team_type']
 export type Team = Pick<Tables<'teams'>, 'id' | 'name' | 'slug' | 'type' | 'logo_path' | 'teachers_set_prices'>
 /** `features`: the keys of the feature flags switched on for the group (features/flags). */
@@ -176,10 +176,11 @@ export async function removeTeamLogo(teamId: string, currentPath: string) {
   await supabase.storage.from(TEAM_LOGO_BUCKET).remove([currentPath])
 }
 
-export async function setTeamRole(teamId: string, userId: string, role: Exclude<TeamRole, 'owner'>) {
+export async function setTeamRole(teamId: string, userId: string, role: Exclude<TeamRole, 'owner' | 'developer'>) {
   const { data, error } = await supabase
     .from('team_members')
-    .update({ role })
+    // The generated Supabase enum types will include this migration's value after Dev type regeneration.
+    .update({ role: role as Database['public']['Enums']['team_role'] })
     .eq('team_id', teamId)
     .eq('user_id', userId)
     .select('user_id')

@@ -9,7 +9,7 @@ import { calendarNotesQuery } from '@/features/reminders/api'
 import { useCurrentTeam } from '@/features/teams/hooks'
 import { meetingsRangeQuery, type LiveSession, type MeetingsScope } from '../api'
 import { readCursor, visibleRange, type CalendarMode } from '../calendarView'
-import { useCanWriteLive } from '../hooks'
+import { useCanScheduleLive } from '../hooks'
 import { toDateKey } from '../recurrence'
 import { LiveSessionList } from './LiveSessionList'
 import { ScheduleSessionDialog } from './ScheduleSessionDialog'
@@ -40,7 +40,7 @@ type MeetingsViewProps = {
 export function MeetingsView({ scope, now, href, showScope, workspaceId, empty, lead }: MeetingsViewProps) {
   // Only the collection being looked at (everything, in a group without collections).
   const { workspaces } = useCollectionView()
-  const canWrite = useCanWriteLive()
+  const canScheduleIn = useCanScheduleLive()
   const { team } = useCurrentTeam()
   const { user } = useAuth()
   const [params, setParams] = useSearchParams()
@@ -59,8 +59,8 @@ export function MeetingsView({ scope, now, href, showScope, workspaceId, empty, 
   const notes = useQuery({ ...calendarNotesQuery(team.id, user.id, range.from, range.to, workspaceId ?? null), enabled: view === 'calendar' })
 
   const canSchedule = workspaceId
-    ? canWrite(workspaceId)
-    : canWrite(null) || workspaces.some((w) => canWrite(w.id))
+    ? canScheduleIn(workspaceId)
+    : canScheduleIn(null) || workspaces.some((w) => canScheduleIn(w.id))
 
   const update = (changes: Record<string, string | null>) =>
     setParams(

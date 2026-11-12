@@ -43,6 +43,8 @@ export function WorkspaceMembersPage() {
   const members = people.filter((p) => p.via === 'member')
   const others = people.filter((p) => p.via !== 'member')
   const collection = collections.find((c) => c.id === workspace.collection_id)
+  const canAssignDeveloper =
+    team.type !== 'learning' && workspace.type === 'general' && collection?.type === 'development'
   const stillOpenTo = (userId: string) =>
     workspace.access === 'group' || (workspace.access === 'collection' && !!collection?.memberIds.includes(userId))
   const openTo = accessLabel(workspace.access, collection)
@@ -106,7 +108,11 @@ export function WorkspaceMembersPage() {
           <h2 className="text-sm font-semibold">{isCourse ? 'Teachers and students' : 'Members'}</h2>
           <p className="text-sm text-muted-foreground">
             {people.length} {people.length === 1 ? 'person' : 'people'}.{' '}
-            {isCourse ? 'Leads teach the course; members are its students.' : 'Leads manage the workspace; members use it.'}
+            {isCourse
+              ? 'Leads teach the course; members are its students.'
+              : canAssignDeveloper
+                ? 'Leads manage the space; developers can schedule its meetings; members use it.'
+                : 'Leads manage the workspace; members use it.'}
             {workspace.access !== 'members' && ` Open to: ${openTo.toLowerCase()}.`}
           </p>
         </div>
@@ -126,6 +132,12 @@ export function WorkspaceMembersPage() {
             const canChangeRole = can.canAssignLeads
             const canRemove = !isYou && can.canRemove(member.role)
             const canLeave = isYou
+            const roleChoices: WorkspaceRole[] =
+              member.role === 'lead'
+                ? ['member', ...(canAssignDeveloper ? ['developer' as const] : [])]
+                : member.role === 'developer'
+                  ? ['member', 'lead']
+                  : ['lead', ...(canAssignDeveloper ? ['developer' as const] : [])]
             return (
               <PersonRow
                 key={member.user_id}
@@ -151,16 +163,16 @@ export function WorkspaceMembersPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         {canChangeRole && (
-                          <DropdownMenuItem
-                            onSelect={() =>
-                              changeRole.mutate({
-                                userId: member.user_id,
-                                role: member.role === 'lead' ? 'member' : 'lead',
-                              })
-                            }
-                          >
-                            {member.role === 'lead' ? 'Make member' : 'Make lead'}
-                          </DropdownMenuItem>
+                          roleChoices
+                            .filter((next) => next !== member.role)
+                            .map((next) => (
+                              <DropdownMenuItem
+                                key={next}
+                                onSelect={() => changeRole.mutate({ userId: member.user_id, role: next })}
+                              >
+                                Make {workspaceRoleLabel[next].toLowerCase()}
+                              </DropdownMenuItem>
+                            ))
                         )}
                         {canChangeRole && (canRemove || canLeave) && <DropdownMenuSeparator />}
                         {(canRemove || canLeave) && (

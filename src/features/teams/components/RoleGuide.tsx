@@ -15,6 +15,7 @@ const typical: Record<TeamType, Record<TeamRole | WorkspaceRole, string>> = {
     owner: 'Runs the academy or school',
     admin: 'Runs it with the owner',
     teacher: 'Creates and teaches their own courses',
+    developer: 'Coordinates project meetings',
     member: 'Students',
     lead: 'Teaches or assists in this course',
   },
@@ -22,6 +23,7 @@ const typical: Record<TeamType, Record<TeamRole | WorkspaceRole, string>> = {
     owner: 'Runs the group',
     admin: 'Team leads and managers',
     teacher: 'Runs trainings: onboarding, workshops, internal courses',
+    developer: 'Coordinates project meetings',
     member: 'Developers and contributors',
     lead: 'Leads this project',
   },
@@ -29,6 +31,7 @@ const typical: Record<TeamType, Record<TeamRole | WorkspaceRole, string>> = {
     owner: 'Runs the group',
     admin: 'Managers and team leads',
     teacher: 'Runs trainings and courses',
+    developer: 'Coordinates project meetings',
     member: 'Everyone else',
     lead: 'Leads this course, project or space',
   },
@@ -39,7 +42,15 @@ const typical: Record<TeamType, Record<TeamRole | WorkspaceRole, string>> = {
  * a member can do inside a course/project/workspace. Wording follows the
  * group's type; the viewer's own role is marked.
  */
-export function RoleGuide({ type, myRole }: { type: TeamType; myRole: TeamRole }) {
+export function RoleGuide({
+  type,
+  myRole,
+  showWorkspaceDeveloper = false,
+}: {
+  type: TeamType
+  myRole: TeamRole
+  showWorkspaceDeveloper?: boolean
+}) {
   const noun = workspaceTypes[defaultWorkspaceType[type]].noun // course / project / space
   const nouns = `${noun}s`
   const who = typical[type]
@@ -152,6 +163,28 @@ export function RoleGuide({ type, myRole }: { type: TeamType; myRole: TeamRole }
           <RoleColumn key={role.title} role={role} />
         ))}
       </div>
+
+      {showWorkspaceDeveloper && (
+        <>
+          <h3 className="mt-8 text-sm font-semibold">Inside a Development Space</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Only Spaces in Development collections can have this role.
+          </p>
+          <div className="mt-4 grid border-y md:grid-cols-2 md:divide-x">
+            <RoleColumn
+              role={{
+                title: 'Developer',
+                who: 'Coordinates meetings in this Space',
+                can: [
+                  'All Member permissions',
+                  'Schedule meetings in this Space when Meetings are enabled',
+                  'Cannot edit or cancel meetings',
+                ],
+              }}
+            />
+          </div>
+        </>
+      )}
     </section>
   )
 }

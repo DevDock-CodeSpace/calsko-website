@@ -25,7 +25,12 @@ import { WorkspaceToolGate } from '@/routes/workspace/WorkspaceToolGate'
 import { meetingCalendar } from '@/features/live/screens'
 
 export const router = createBrowserRouter([
-  { path: '/', loader: () => redirect('/app') },
+  {
+    path: '/',
+    loader: () => redirect('/app'),
+    element: <AuthLoading />,
+    hydrateFallbackElement: <AuthLoading />,
+  },
   {
     path: '/login',
     loader: loginLoader,
