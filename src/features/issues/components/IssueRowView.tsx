@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, CircleUserRound, GitBranch, Gauge, IterationCw } from 'lucide-react'
+import { ChevronRight, CircleUserRound, GitBranch, Gauge, IterationCw, Trash2 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { PersonAvatar } from '@/components/PersonRow'
@@ -65,6 +65,7 @@ export function IssueRowView({
   issue,
   subIssues,
   nest,
+  onDelete,
   source,
   children,
 }: {
@@ -72,6 +73,7 @@ export function IssueRowView({
   subIssues?: { done: number; total: number }
   /** In a nested list: indented by depth, with an arrow that opens its sub-issues. */
   nest?: RowNest
+  onDelete?: () => void
   source: IssueRowSource
   /** Extra menus anchored in the row (the project list's shortcut-only menus). */
   children?: ReactNode
@@ -290,6 +292,21 @@ export function IssueRowView({
         {formatShortDate(issue.created_at)}
       </span>
       {children}
+      {onDelete && (
+        <button
+          type="button"
+          className={cn(
+            iconButton,
+            'text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 hover:text-destructive',
+            nav.active && 'opacity-100',
+          )}
+          aria-label={`Delete ${id}`}
+          title="Delete issue"
+          onClick={onDelete}
+        >
+          <Trash2 className="size-3.5" />
+        </button>
+      )}
     </li>
   )
 }
