@@ -7,7 +7,17 @@ import type { RowNest } from './IssueList'
 import { IssueRowView } from './IssueRowView'
 
 /** A row in a project's list: `IssueRowView` fed by the project's issue context. */
-export function IssueRow({ issue, subIssues, nest }: { issue: Issue; subIssues?: { done: number; total: number }; nest?: RowNest }) {
+export function IssueRow({
+  issue,
+  subIssues,
+  nest,
+  onDelete,
+}: {
+  issue: Issue
+  subIssues?: { done: number; total: number }
+  nest?: RowNest
+  onDelete?: () => void
+}) {
   const { team } = useCurrentTeam()
   const { workspace, members, labels, cycles, repos, plans, userId } = useIssueContext()
   const update = useUpdateIssue()
@@ -17,6 +27,7 @@ export function IssueRow({ issue, subIssues, nest }: { issue: Issue; subIssues?:
       issue={issue}
       subIssues={subIssues}
       nest={nest}
+      onDelete={onDelete}
       source={{
         href: issuePath(team.slug, workspace.id, issue.number),
         workspace,
