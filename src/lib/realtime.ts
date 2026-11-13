@@ -222,6 +222,7 @@ const AFFECTS: Record<string, QueryKey[] | ((change: Change) => QueryKey[])> = {
   issue_views: [['issues', 'views'], ['issues', 'pins']],
   issue_pins: [['issues', 'pins']],
   issue_pull_requests: [['issues', 'pull-requests']],
+  issue_github_links: [],
   // Goals assigned to issues (features/plans); a plan's name or status shows in its chips and lists.
   plans: [['plans']],
   // Shared with someone, or unshared: their Files (docs, whiteboards, folders) and the Share dialog.

@@ -24,6 +24,9 @@
 //     repo), from the project's base branch. Anyone who can see the issue
 //     (checked under their RLS). Adopts an existing branch of that name;
 //     does nothing if the issue already has one.
+//   sync_issue_hierarchy { issueId } → { issue, parent }
+//     Creates (or finds) GitHub issues for the Calsko issue and its parent,
+//     then makes GitHub's parent link match Calsko. Both must use the same repo.
 //   branches { repoId } → { defaultBranch, branches }
 //     Branch names, for picking a project's base and "done" branches.
 //
@@ -95,6 +98,44 @@ async function github<T>(path: string, token: string, init: RequestInit = {}): P
     throw new HttpError(502, 'github_error')
   }
   return (await res.json()) as T
+}
+
+async function githubIssueRequest<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${GITHUB_API}${path}`, {
+    ...init,
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'X-GitHub-Api-Version': '2026-03-10',
+      'User-Agent': 'Calsko',
+      ...init.headers,
+    },
+  })
+  if (!res.ok) {
+    const detail = await res.text()
+    console.error(`[github] ${init.method ?? 'GET'} ${path} → ${res.status}`, detail)
+    if (res.status === 403) throw new HttpError(403, 'issues_permission')
+    throw new HttpError(502, 'github_error')
+  }
+  return (await res.json()) as T
+}
+
+async function githubIssueParent(path: string, token: string): Promise<{ id: number; number: number } | null> {
+  const res = await fetch(`${GITHUB_API}${path}`, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'X-GitHub-Api-Version': '2026-03-10',
+      'User-Agent': 'Calsko',
+    },
+  })
+  if (res.status === 404) return null
+  if (!res.ok) {
+    console.error(`[github] GET ${path} → ${res.status}`, await res.text())
+    if (res.status === 403) throw new HttpError(403, 'issues_permission')
+    throw new HttpError(502, 'github_error')
+  }
+  return (await res.json()) as { id: number; number: number }
 }
 
 type AppConfig = { appId: string; privateKey: string; clientId: string; clientSecret: string }
@@ -497,6 +538,161 @@ async function createBranch(
   return { branch: { name, base, sha }, created: !adopted }
 }
 
+type CalskoIssue = {
+  id: string
+  workspace_id: string
+  number: number
+  title: string
+  repo_id: string | null
+  parent_id: string | null
+  workspaces: { issue_key: string } | null
+}
+
+type GitHubIssueLink = {
+  issue_id: string
+  repo_id: string
+  github_issue_id: number
+  github_issue_number: number
+  url: string
+}
+
+type IssueRepoLink = {
+  repo_id: string
+  repos: { id: string; owner: string; name: string; github_repo_id: number | null; installation_id: number | null } | null
+}
+
+async function readCalskoIssue(asUser: SupabaseClient, issueId: string): Promise<CalskoIssue> {
+  const { data, error } = await asUser
+    .from('issues')
+    .select('id, workspace_id, number, title, repo_id, parent_id, workspaces!issues_workspace_team_fkey(issue_key)')
+    .eq('id', issueId)
+    .maybeSingle()
+  if (error) {
+    console.error('[github] reading issue for sync failed', error)
+    throw new HttpError(500, 'server_error')
+  }
+  if (!data) throw new HttpError(404, 'not_found')
+  return data as unknown as CalskoIssue
+}
+
+async function ensureGitHubIssue(
+  admin: SupabaseClient,
+  issue: CalskoIssue,
+  repoId: string,
+  repo: IssueRepoLink['repos'],
+  token: string,
+  fullName: string,
+): Promise<GitHubIssueLink> {
+  const { data: existing, error: existingError } = await admin
+    .from('issue_github_links')
+    .select('issue_id, repo_id, github_issue_id, github_issue_number, url')
+    .eq('issue_id', issue.id)
+    .maybeSingle()
+  if (existingError) {
+    console.error('[github] reading issue link failed', existingError)
+    throw new HttpError(500, 'server_error')
+  }
+  if (existing) {
+    if (existing.repo_id !== repoId) throw new HttpError(409, 'repo_mismatch')
+    return existing as GitHubIssueLink
+  }
+  if (!repo) throw new HttpError(404, 'repo_not_found')
+
+  const [owner, name] = fullName.split('/')
+  const repositoryPath = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
+  const issueKey = `${issue.workspaces?.issue_key ?? 'ISSUE'}-${issue.number}`
+  const marker = `calsko_issue_${issue.id.replace(/-/g, '')}`
+  const search = await githubIssueRequest<{ items: { id: number; number: number; html_url: string }[] }>(
+    `/search/issues?q=${encodeURIComponent(`repo:${fullName} is:issue in:body ${marker}`)}&per_page=2`,
+    token,
+  )
+  if (search.items.length > 1) throw new HttpError(409, 'duplicate_issue')
+  const remote =
+    search.items[0] ??
+    (await githubIssueRequest<{ id: number; number: number; html_url: string }>(`${repositoryPath}/issues`, token, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: `${issueKey}: ${issue.title}`.slice(0, 256),
+        body: `Managed from Calsko issue ${issueKey}.\n\n<!-- ${marker} -->`,
+      }),
+    }))
+
+  const link: GitHubIssueLink = {
+    issue_id: issue.id,
+    repo_id: repoId,
+    github_issue_id: remote.id,
+    github_issue_number: remote.number,
+    url: remote.html_url,
+  }
+  const { error: saveError } = await admin.from('issue_github_links').insert({
+    ...link,
+    workspace_id: issue.workspace_id,
+  })
+  if (saveError) {
+    console.error('[github] saving GitHub issue link failed', saveError)
+    throw new HttpError(500, 'server_error')
+  }
+  return link
+}
+
+async function syncIssueHierarchy(
+  admin: SupabaseClient,
+  asUser: SupabaseClient,
+  config: AppConfig,
+  issueId: string,
+) {
+  const issue = await readCalskoIssue(asUser, issueId)
+  const repoId = issue.repo_id
+  if (!repoId) throw new HttpError(409, 'no_repo')
+
+  let parent: CalskoIssue | null = null
+  if (issue.parent_id) {
+    parent = await readCalskoIssue(asUser, issue.parent_id)
+    if (parent.workspace_id !== issue.workspace_id) throw new HttpError(409, 'repo_mismatch')
+    if (parent.repo_id !== repoId) throw new HttpError(409, 'repo_mismatch')
+  }
+
+  const { data: links, error: linksError } = await asUser
+    .from('workspace_repos')
+    .select('repo_id, repos!workspace_repos_repo_fkey(id, owner, name, github_repo_id, installation_id)')
+    .eq('workspace_id', issue.workspace_id)
+  if (linksError) {
+    console.error('[github] reading issue repositories failed', linksError)
+    throw new HttpError(500, 'server_error')
+  }
+  const repoLink = ((links ?? []) as unknown as IssueRepoLink[]).find((link) => link.repo_id === repoId)
+  if (!repoLink?.repos) throw new HttpError(404, 'repo_not_found')
+
+  const { token, fullName } = await connectedRepo(config, repoLink.repos)
+  const childLink = await ensureGitHubIssue(admin, issue, repoId, repoLink.repos, token, fullName)
+  const parentLink = parent
+    ? await ensureGitHubIssue(admin, parent, repoId, repoLink.repos, token, fullName)
+    : null
+  const [owner, name] = fullName.split('/')
+  const repositoryPath = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
+  const remoteParent = await githubIssueParent(
+    `${repositoryPath}/issues/${childLink.github_issue_number}/parent`,
+    token,
+  )
+
+  if (parentLink && remoteParent?.id !== parentLink.github_issue_id) {
+    await githubIssueRequest(`${repositoryPath}/issues/${parentLink.github_issue_number}/sub_issues`, token, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sub_issue_id: childLink.github_issue_id, replace_parent: true }),
+    })
+  } else if (!parentLink && remoteParent) {
+    await githubIssueRequest(`${repositoryPath}/issues/${remoteParent.number}/sub_issue`, token, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sub_issue_id: childLink.github_issue_id }),
+    })
+  }
+
+  return { issue: { number: childLink.github_issue_number, url: childLink.url }, parent: parentLink?.github_issue_number ?? null }
+}
+
 async function listBranches(asUser: SupabaseClient, config: AppConfig, body: Record<string, unknown>) {
   const { repoId } = body
   if (!isUuid(repoId)) throw new HttpError(400, 'bad_request')
@@ -562,6 +758,11 @@ Deno.serve(async (req) => {
         return json(await addRepo(admin, config, userId, body))
       case 'create_branch':
         return json(await createBranch(admin, asUser, config, userId, body))
+      case 'sync_issue_hierarchy': {
+        const { issueId } = body
+        if (!isUuid(issueId)) throw new HttpError(400, 'bad_request')
+        return json(await syncIssueHierarchy(admin, asUser, config, issueId))
+      }
       case 'branches':
         return json(await listBranches(asUser, config, body))
       default:

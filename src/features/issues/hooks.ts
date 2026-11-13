@@ -14,6 +14,7 @@ import {
   issueKeys,
   labelsQuery,
   setIssueLabels,
+  syncIssueHierarchy,
   updateIssue,
   type Issue,
   type IssueDetail,
@@ -44,7 +45,7 @@ export function useIssueContext() {
   return { workspace, members, labels, cycles, repos, plans, canManage: can.canEdit, userId: user.id }
 }
 
-type UpdateVars = { issue: Pick<Issue, 'id' | 'number'>; patch?: IssuePatch; labelIds?: string[] }
+type UpdateVars = { issue: Pick<Issue, 'id' | 'number' | 'parent_id' | 'repo_id'>; patch?: IssuePatch; labelIds?: string[] }
 
 /**
  * Creates the issue's branch on GitHub (its repo, or the project's only one).
@@ -109,6 +110,14 @@ export function useUpdateIssue() {
         }
       }
       if (labelIds) await setIssueLabels(issue.id, labelIds)
+      const hierarchyChanged =
+        (patch?.parent_id !== undefined && patch.parent_id !== issue.parent_id) ||
+        (patch?.repo_id !== undefined && patch.repo_id !== issue.repo_id && patch.repo_id !== null)
+      if (hierarchyChanged) {
+        void syncIssueHierarchy(issue.id).catch((error) =>
+          toast.error(`Saved in Calsko, but GitHub nesting couldn’t be synced: ${errorMessage(error)}`),
+        )
+      }
     },
     onMutate: async ({ issue, patch, labelIds }) => {
       const listKey = issueKeys.workspace(workspace.id)
@@ -167,7 +176,7 @@ export function useUpdateIssue() {
 
 type TeamUpdateVars = {
   /** `workspace.repos` (the group list has them) saves looking the project's repos up. */
-  issue: Pick<Issue, 'id' | 'number' | 'status'> & { workspace: { id: string; repos?: unknown[] } }
+  issue: Pick<Issue, 'id' | 'number' | 'status' | 'parent_id' | 'repo_id'> & { workspace: { id: string; repos?: unknown[] } }
   patch: IssuePatch
 }
 
@@ -207,6 +216,14 @@ export function useUpdateTeamIssue(teamId: string) {
       } catch (error) {
         done()
         throw error
+      }
+      const hierarchyChanged =
+        (patch.parent_id !== undefined && patch.parent_id !== issue.parent_id) ||
+        (patch.repo_id !== undefined && patch.repo_id !== issue.repo_id && patch.repo_id !== null)
+      if (hierarchyChanged) {
+        void syncIssueHierarchy(issue.id).catch((error) =>
+          toast.error(`Saved in Calsko, but GitHub nesting couldn’t be synced: ${errorMessage(error)}`),
+        )
       }
     },
     onMutate: async ({ issue, patch }) => {

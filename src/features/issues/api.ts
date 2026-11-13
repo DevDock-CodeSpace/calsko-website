@@ -336,6 +336,10 @@ export const issueBranchesQuery = (issueId: string) =>
 export const createIssueBranch = (issueId: string) =>
   callGitHub<{ branch: { name: string; base: string }; created: boolean }>('create_branch', { issueId })
 
+/** Creates/updates the matching GitHub parent/sub-issue relationship for a Calsko issue. */
+export const syncIssueHierarchy = (issueId: string) =>
+  callGitHub<{ issue: { number: number; url: string }; parent: number | null }>('sync_issue_hierarchy', { issueId })
+
 export const commentsQuery = (issueId: string) =>
   queryOptions({
     queryKey: issueKeys.comments(issueId),
