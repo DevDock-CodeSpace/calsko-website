@@ -445,8 +445,11 @@ async function createBranch(
     .maybeSingle()
   if (existing) return { branch: existing, created: false }
 
-  const { token, fullName, defaultBranch } = await connectedRepo(config, link.repos)
-  const base = link.base_branch ?? defaultBranch
+  const repo = link.repos
+  if (!repo || repo.github_repo_id === null || repo.installation_id === null) throw new HttpError(409, 'repo_not_connected')
+  if (link.base_branch === null) throw new HttpError(409, 'base_branch_unset')
+  const { token, fullName } = await connectedRepo(config, repo)
+  const base = link.base_branch
   const key = (issue.workspaces as unknown as { issue_key: string }).issue_key
   const name = branchName(key, issue.number, issue.title)
 

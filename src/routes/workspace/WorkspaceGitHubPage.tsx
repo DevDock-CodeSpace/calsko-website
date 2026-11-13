@@ -96,9 +96,9 @@ export function WorkspaceGitHubPage() {
                 <span className="flex-1" />
                 <span
                   className="hidden min-w-0 truncate font-mono text-[11px] text-muted-foreground md:block"
-                  title="Issue branches start from the first; merging into the done branches marks issues Done"
+                  title="Choose a base branch before issue branches can be created; merging into the done branches marks issues Done"
                 >
-                  from {repo.base_branch ?? 'default'} · done on {repo.done_branches.length ? repo.done_branches.join(', ') : 'default'}
+                  from {repo.base_branch ?? 'none'} · done on {repo.done_branches.length ? repo.done_branches.join(', ') : 'default'}
                 </span>
                 {hasIssues && (
                   <Link
