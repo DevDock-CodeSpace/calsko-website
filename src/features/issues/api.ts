@@ -156,7 +156,7 @@ export const workspaceIssuesQuery = (workspaceId: string) =>
  * (sprint, labels, the project's repos), so the page draws project-style rows from one request.
  */
 export type TeamIssue = Issue & {
-  workspace: { id: string; title: string; issue_key: string; repos: Repo[] }
+  workspace: { id: string; title: string; issue_key: string; repos: (Repo & { base_branch: string | null })[] }
   assignee: PersonProfile
   cycle: IssueCycle | null
   labels: IssueLabel[]
@@ -164,7 +164,7 @@ export type TeamIssue = Issue & {
 
 // Written out (not built from ISSUE_COLUMNS) so the typed client can read it.
 const TEAM_ISSUE_COLUMNS =
-  'id, workspace_id, number, title, status, priority, assignee_id, import_assignee, plan_id, parent_id, cycle_id, repo_id, estimate, due_date, completed_at, created_by, created_at, updated_at, issue_label_links(label_id, label:issue_labels!issue_label_links_label_fkey(id, workspace_id, name, color)), workspace:workspaces!issues_workspace_team_fkey(id, title, issue_key, workspace_repos(repo:repos!workspace_repos_repo_fkey(id, team_id, owner, name, created_at, github_repo_id, installation_id))), assignee:profiles!issues_assignee_id_fkey(display_name, avatar_url), cycle:issue_cycles!issues_cycle_id_fkey(id, workspace_id, number, name, starts_on, ends_on)'
+  'id, workspace_id, number, title, status, priority, assignee_id, import_assignee, plan_id, parent_id, cycle_id, repo_id, estimate, due_date, completed_at, created_by, created_at, updated_at, issue_label_links(label_id, label:issue_labels!issue_label_links_label_fkey(id, workspace_id, name, color)), workspace:workspaces!issues_workspace_team_fkey(id, title, issue_key, workspace_repos(base_branch, repo:repos!workspace_repos_repo_fkey(id, team_id, owner, name, created_at, github_repo_id, installation_id))), assignee:profiles!issues_assignee_id_fkey(display_name, avatar_url), cycle:issue_cycles!issues_cycle_id_fkey(id, workspace_id, number, name, starts_on, ends_on)'
 
 /** Issues from every workspace in the group the caller can see (RLS). */
 export const teamIssuesQuery = (teamId: string) =>
@@ -184,7 +184,7 @@ export const teamIssuesQuery = (teamId: string) =>
           title: workspace.title,
           issue_key: workspace.issue_key,
           repos: workspace.workspace_repos
-            .map((link) => link.repo)
+            .map(({ repo, base_branch }) => ({ ...repo, base_branch }))
             .sort((a, b) => `${a.owner}/${a.name}`.localeCompare(`${b.owner}/${b.name}`, undefined, { sensitivity: 'base' })),
         },
         assignee,

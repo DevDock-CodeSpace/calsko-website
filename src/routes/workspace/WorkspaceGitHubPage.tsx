@@ -39,7 +39,8 @@ export function WorkspaceGitHubPage() {
   })
   const hasIssues = workspace.modules.includes('issues')
   // Open-issue counts, only when the Issues tool is on here.
-  const issues = useQuery({ ...workspaceIssuesQuery(workspace.id), enabled: hasIssues }).data ?? []
+  const issueQuery = useQuery({ ...workspaceIssuesQuery(workspace.id), enabled: hasIssues })
+  const issues = issueQuery.data ?? []
   const unlink = useUnlinkRepo(workspace.id)
   const [confirm, setConfirm] = useState<Repo | null>(null)
   const [settings, setSettings] = useState<LinkedRepo | null>(null)
@@ -133,6 +134,12 @@ export function WorkspaceGitHubPage() {
         <RepoBranchSettingsDialog
           key={settings.id}
           workspaceId={workspace.id}
+          issueKey={workspace.issue_key}
+          issues={issues}
+          issuesEnabled={hasIssues}
+          issuesLoading={issueQuery.isPending}
+          issuesError={issueQuery.isError ? errorMessage(issueQuery.error) : null}
+          repoCount={repos.length}
           repo={settings}
           onOpenChange={(open) => !open && setSettings(null)}
         />
