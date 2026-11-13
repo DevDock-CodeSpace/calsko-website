@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, LoaderCircle, Plus, X } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import type { Issue } from '@/features/issues/api'
+import { issueBranchName, issueIdentifier } from '@/features/issues/meta'
 import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { repoBranchesQuery, repoFullName, repoKeys, updateRepoBranches, type LinkedRepo } from '../api'
@@ -24,10 +26,22 @@ const isValidBranchName = (name: string) => BRANCH_NAME_RE.test(name)
  */
 export function RepoBranchSettingsDialog({
   workspaceId,
+  issueKey,
+  issues,
+  issuesEnabled,
+  issuesLoading,
+  issuesError,
+  repoCount,
   repo,
   onOpenChange,
 }: {
   workspaceId: string
+  issueKey: string
+  issues: Issue[]
+  issuesEnabled: boolean
+  issuesLoading: boolean
+  issuesError: string | null
+  repoCount: number
   repo: LinkedRepo
   onOpenChange: (open: boolean) => void
 }) {
@@ -39,6 +53,7 @@ export function RepoBranchSettingsDialog({
   const [baseCustom, setBaseCustom] = useState(repo.base_branch ?? '')
   const [done, setDone] = useState<string[]>(repo.done_branches)
   const [custom, setCustom] = useState('')
+  const [previewIssueId, setPreviewIssueId] = useState<string | null>(null)
 
   const validateBranchName = (name: string) => {
     if (!isValidBranchName(name)) {
@@ -51,6 +66,14 @@ export function RepoBranchSettingsDialog({
   // GitHub's branches, plus any saved or typed ones GitHub doesn't list (yet).
   const names = [...new Set([...(github.data?.branches ?? []), ...done, ...(base ? [base] : [])])].sort((a, b) =>
     a.localeCompare(b),
+  )
+  const branchableIssues = useMemo(
+    () => issues.filter((issue) => issue.repo_id === repo.id || (repoCount === 1 && issue.repo_id === null)),
+    [issues, repo.id, repoCount],
+  )
+  const previewIssue = useMemo(
+    () => branchableIssues.find((issue) => issue.id === previewIssueId),
+    [branchableIssues, previewIssueId],
   )
   const toggle = (name: string) =>
     setDone((prev) => (prev.includes(name) ? prev.filter((n) => n !== name) : prev.length < MAX_DONE ? [...prev, name] : prev))
@@ -104,55 +127,118 @@ export function RepoBranchSettingsDialog({
           </p>
         )}
 
-        <div className="min-w-0 space-y-2">
-          <Label htmlFor="base-branch">New issue branches start from</Label>
-          <Select
-            value={base ?? DEFAULT}
-            onValueChange={(v) => {
-              const next = v === DEFAULT ? null : v
-              setBase(next)
-              setBaseCustom(next ?? '')
-            }}
-          >
-            <SelectTrigger id="base-branch" className="w-full font-mono text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={DEFAULT} className="font-mono text-xs">
-                None
-              </SelectItem>
-              {names.map((name) => (
-                <SelectItem key={name} value={name} className="font-mono text-xs">
-                  {name}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="min-w-0 space-y-2">
+            <Label htmlFor="base-branch">New issue branches start from</Label>
+            <Select
+              value={base ?? DEFAULT}
+              onValueChange={(v) => {
+                const next = v === DEFAULT ? null : v
+                setBase(next)
+                setBaseCustom(next ?? '')
+              }}
+            >
+              <SelectTrigger id="base-branch" className="w-full font-mono text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={DEFAULT} className="font-mono text-xs">
+                  None
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {base === null && (
-            <p className="text-xs text-muted-foreground">Choose a branch to enable automatic issue-branch creation.</p>
-          )}
-          <Input
-            value={baseCustom}
-            onChange={(event) => {
-              const value = event.target.value.trimStart()
-              setBaseCustom(value)
-              const next = value.trim()
-              setBase(next || null)
-            }}
-            placeholder={connected ? 'Or type another branch name…' : 'Branch name, e.g. main'}
-            aria-label="Custom base branch name"
-            className="h-9 min-w-0 font-mono text-xs"
-          />
+                {names.map((name) => (
+                  <SelectItem key={name} value={name} className="font-mono text-xs">
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {base === null && (
+              <p className="text-xs text-muted-foreground">Choose a branch to enable automatic issue-branch creation.</p>
+            )}
+            <Input
+              value={baseCustom}
+              onChange={(event) => {
+                const value = event.target.value.trimStart()
+                setBaseCustom(value)
+                const next = value.trim()
+                setBase(next || null)
+              }}
+              placeholder={connected ? 'Or type another branch name…' : 'Branch name, e.g. main'}
+              aria-label="Custom base branch name"
+              className="h-9 min-w-0 font-mono text-xs"
+            />
+          </div>
+
+          <div className="min-w-0 space-y-2">
+            <Label id="branch-issue-label">Preview branch name for an issue</Label>
+            {!issuesEnabled ? (
+              <p className="text-xs text-muted-foreground">Issues are not enabled in this project.</p>
+            ) : issuesError ? (
+              <p role="alert" className="text-xs text-destructive">{issuesError}</p>
+            ) : issuesLoading ? (
+              <p className="text-xs text-muted-foreground">Loading issues…</p>
+            ) : branchableIssues.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No issues are linked to this repository yet.</p>
+            ) : (
+              <ul
+                aria-labelledby="branch-issue-label"
+                className="max-h-32 divide-y overflow-y-auto rounded-md bg-muted/20"
+              >
+                {branchableIssues.map((issue) => {
+                  const selected = issue.id === previewIssueId
+                  return (
+                    <li key={issue.id}>
+                      <button
+                        type="button"
+                        aria-pressed={selected}
+                        title={issue.title}
+                        onClick={() => setPreviewIssueId(selected ? null : issue.id)}
+                        className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                      >
+                        <span
+                          className={cn(
+                            'flex size-4 shrink-0 items-center justify-center rounded-sm border',
+                            selected && 'border-brand bg-brand text-brand-foreground',
+                          )}
+                        >
+                          {selected && <Check className="size-3" />}
+                        </span>
+                        <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 font-mono text-xs font-semibold">
+                          {issueIdentifier(issueKey, issue.number)}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                          {issue.title}
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            {previewIssue && (base === null ? (
+              <p className="text-xs text-muted-foreground">Choose a base branch to preview this issue’s branch name.</p>
+            ) : (
+              <p
+                tabIndex={0}
+                aria-label={`Branch name: ${issueBranchName(issueKey, previewIssue.number, previewIssue.title)}`}
+                className="truncate rounded-md bg-muted/40 px-3 py-2 font-mono text-xs font-semibold"
+                title={issueBranchName(issueKey, previewIssue.number, previewIssue.title)}
+              >
+                {issueIdentifier(issueKey, previewIssue.number)}
+                <span className="ml-2 font-sans font-normal text-muted-foreground">Hover to view branch name</span>
+              </p>
+            ))}
+          </div>
         </div>
 
-        <div className="min-w-0 space-y-2.5">
+        <div className="space-y-2">
           <Label>Merging into these marks issues Done</Label>
           <p className="text-xs text-muted-foreground">
             Tick the branch your feature PRs merge into (usually <span className="font-mono">dev</span> or{' '}
             <span className="font-mono">main</span>), not only the one you deploy from. Release PRs rarely mention issue IDs.
           </p>
           {names.length > 0 && (
-            <ul className="max-h-48 divide-y overflow-y-auto rounded-md border">
+            <ul className="max-h-32 divide-y overflow-y-auto rounded-md bg-muted/20">
               {names.map((name) => {
                 const on = done.includes(name)
                 return (
@@ -161,7 +247,7 @@ export function RepoBranchSettingsDialog({
                       type="button"
                       aria-pressed={on}
                       onClick={() => toggle(name)}
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
                     >
                       <span
                         className={cn(
@@ -171,7 +257,9 @@ export function RepoBranchSettingsDialog({
                       >
                         {on && <Check className="size-3" />}
                       </span>
-                      <span className="truncate font-mono text-xs">{name}</span>
+                      <span className="truncate font-mono text-xs" title={name}>
+                        {name}
+                      </span>
                     </button>
                   </li>
                 )

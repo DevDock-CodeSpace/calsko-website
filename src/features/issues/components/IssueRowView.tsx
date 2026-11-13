@@ -10,11 +10,13 @@ import type { Repo } from '@/features/repos/api'
 import { GitHubMark } from '@/features/repos/components/GitHubMark'
 import type { WorkspaceMember } from '@/features/workspaces/api'
 import { formatShortDate, localDateISO } from '@/lib/format'
+import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 import { issueBranchesQuery, type Issue, type IssueCycle, type IssueLabel, type IssuePatch } from '../api'
 import { copyBranchName } from '../copyBranch'
 import { cycleTitle } from '../cycles'
-import { ESTIMATE_HOURS, hoursLabel, isClosed, issueBranchName, issueIdentifier, priorityLabel, statusLabel } from '../meta'
+import { ESTIMATE_HOURS, hoursLabel, isClosed, issueBranchRepo, issueIdentifier, priorityLabel, statusLabel } from '../meta'
 import { useRowNav, type MenuKind } from '../nav-context'
 import { AssigneePicker } from './AssigneePicker'
 import type { RowNest } from './IssueList'
@@ -35,7 +37,7 @@ export type IssueRowSource = {
   members: WorkspaceMember[]
   labels: IssueLabel[]
   cycles: IssueCycle[]
-  repos: Repo[]
+  repos: (Repo & { base_branch: string | null })[]
   /** The group's plans (one list for the whole group). */
   plans: Plan[]
   userId: string
@@ -82,6 +84,7 @@ export function IssueRowView({
   const cycle = cycles.find((c) => c.id === issue.cycle_id)
   const plan = plans.find((p) => p.id === issue.plan_id)
   const repo = repos.find((r) => r.id === issue.repo_id)
+  const baseBranchConfigured = issueBranchRepo(repos, issue.repo_id)?.base_branch != null
   const [today] = useState(() => localDateISO(new Date()))
   const assignee = members.find((m) => m.user_id === issue.assignee_id)
   const issueLabels = labels.filter((l) => issue.labelIds.includes(l.id))
@@ -152,7 +155,7 @@ export function IssueRowView({
           {subIssues.done}/{subIssues.total}
         </span>
       )}
-      {repos.length > 0 && (
+      {baseBranchConfigured && (
         <button
           type="button"
           className={cn(
@@ -162,14 +165,18 @@ export function IssueRowView({
           )}
           aria-label="Copy branch name"
           title="Copy branch name"
-          // The branch it has (one request, on click), else the name it would get.
-          onClick={() =>
-            void copyBranchName(
-              queryClient
-                .fetchQuery({ ...issueBranchesQuery(issue.id), staleTime: 0 })
-                .then((branches) => branches[0]?.name ?? issueBranchName(workspace.issue_key, issue.number, issue.title)),
+          onClick={() => {
+            void queryClient.fetchQuery({ ...issueBranchesQuery(issue.id), staleTime: 0 }).then(
+              (branches) => {
+                if (!branches[0]) {
+                  toast.error('Create the issue branch first to copy its name.')
+                  return
+                }
+                return copyBranchName(branches[0].name)
+              },
+              (error) => toast.error(errorMessage(error)),
             )
-          }
+          }}
         >
           <GitBranch className="size-3.5" />
         </button>

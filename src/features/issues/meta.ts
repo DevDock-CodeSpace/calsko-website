@@ -50,6 +50,11 @@ export const labelDotClass: Record<LabelColor, string> = {
 /** CAP-12 */
 export const issueIdentifier = (key: string, number: number) => `${key}-${number}`
 
+/** The linked repo whose base branch applies to this issue, if it can be resolved. */
+export function issueBranchRepo(repos: readonly { id: string; base_branch: string | null }[], repoId: string | null) {
+  return repoId ? repos.find((repo) => repo.id === repoId) : repos.length === 1 ? repos[0] : undefined
+}
+
 /**
  * The git branch for an issue: dock/cap-12-add-login-page. The dock/ prefix
  * groups Calsko's branches on GitHub; the github-webhook function finds the
