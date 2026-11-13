@@ -107,10 +107,10 @@ export function IssueRowView({
       data-issue-row={issue.id}
       onMouseEnter={nav.focus}
       className={cn(
-        'group relative flex h-10 items-center gap-2 px-3 text-sm hover:bg-muted/50 has-[a:focus-visible]:bg-muted/50',
+        'group relative flex h-9 items-center gap-2 px-3 text-sm hover:bg-muted/50 has-[a:focus-visible]:bg-muted/50',
         nav.active && 'bg-muted/60 before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-brand',
       )}
-      style={nest?.depth ? { paddingLeft: `${0.75 + nest.depth * 1.5}rem` } : undefined}
+      style={nest?.depth ? { paddingLeft: `${nest.depth * 0.75}rem` } : undefined}
     >
       {nest &&
         (nest.onToggle ? (
