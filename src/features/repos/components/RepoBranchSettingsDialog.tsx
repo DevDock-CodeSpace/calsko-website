@@ -89,7 +89,7 @@ export function RepoBranchSettingsDialog({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={DEFAULT} className="font-mono text-xs">
-                Default ({defaultName})
+                None
               </SelectItem>
               {names.map((name) => (
                 <SelectItem key={name} value={name} className="font-mono text-xs">
@@ -98,6 +98,9 @@ export function RepoBranchSettingsDialog({
               ))}
             </SelectContent>
           </Select>
+          {base === null && (
+            <p className="text-xs text-muted-foreground">Choose a branch to enable automatic issue-branch creation.</p>
+          )}
         </div>
 
         <div className="space-y-1.5">

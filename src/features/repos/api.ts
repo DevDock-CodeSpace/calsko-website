@@ -80,7 +80,7 @@ export const teamReposQuery = (teamId: string) =>
 
 /**
  * A repo as linked to one workspace, with that project's branch settings:
- * new issue branches start from `base_branch` (null = the repo's default), and
+ * new issue branches start from `base_branch` (null = no base selected), and
  * merging into one of `done_branches` marks issues Done (empty = the default).
  */
 export type LinkedRepo = Repo & { base_branch: string | null; done_branches: string[] }
@@ -213,6 +213,7 @@ const githubErrors: Record<string, string> = {
   not_found: 'That no longer exists, or you don’t have access to it.',
   no_repo: 'Set the issue’s repository first (this project has several).',
   repo_not_connected: 'That repository isn’t connected to GitHub. Add it from GitHub in Group settings → Repositories.',
+  base_branch_unset: 'Choose a base branch in this project’s GitHub settings before creating issue branches.',
   base_missing: 'The project’s base branch doesn’t exist on GitHub. Check the branch settings on the GitHub tab.',
   github_error: 'GitHub didn’t respond as expected. Please try again.',
 }
