@@ -81,8 +81,29 @@ begin
   insert into public.issues (workspace_id, title, status, parent_id)
   values (v_workspace, 'Canceled child', 'canceled', v_parent);
   select status into v_status from public.issues where id = v_parent;
+  if v_status <> 'done' then
+    raise exception 'Only canceled children must leave a Done parent as it is; got %', v_status;
+  end if;
+
+  insert into public.issues (workspace_id, title, status)
+  values (v_workspace, 'Done and canceled children', 'in_progress')
+  returning id into v_parent;
+  insert into public.issues (workspace_id, title, status, parent_id)
+  values (v_workspace, 'Child to finish', 'todo', v_parent)
+  returning id into v_child_one;
+  insert into public.issues (workspace_id, title, status, parent_id)
+  values (v_workspace, 'Child to cancel', 'todo', v_parent)
+  returning id into v_child_two;
+  update public.issues set status = 'done' where id = v_child_one;
+  update public.issues set status = 'canceled' where id = v_child_two;
+  select status into v_status from public.issues where id = v_parent;
+  if v_status <> 'done' then
+    raise exception 'Done and canceled children must complete the parent; got %', v_status;
+  end if;
+  update public.issues set status = 'todo' where id = v_child_two;
+  select status into v_status from public.issues where id = v_parent;
   if v_status <> 'todo' then
-    raise exception 'A Done parent with an unfinished child must reopen to Todo; got %', v_status;
+    raise exception 'Reopening a canceled child must reopen the parent; got %', v_status;
   end if;
 
   insert into public.issues (workspace_id, title, status)
@@ -135,6 +156,25 @@ begin
   exception when sqlstate 'DD001' then
     null;
   end;
+
+  -- GitHub closing a parent: kept when nothing under it is open, turned back while something is.
+  insert into public.issues (workspace_id, title, status, parent_id)
+  values (v_workspace, 'Canceled under locked', 'canceled', v_locked);
+  perform set_config('devdock.via', 'github', true);
+  update public.issues set status = 'done' where id = v_locked;
+  select status into v_status from public.issues where id = v_locked;
+  if v_status <> 'done' then
+    raise exception 'GitHub must close a parent whose children are all closed; got %', v_status;
+  end if;
+  update public.issues set status = 'todo' where id = v_locked;
+  insert into public.issues (workspace_id, title, status, parent_id)
+  values (v_workspace, 'Open under locked', 'todo', v_locked);
+  update public.issues set status = 'done' where id = v_locked;
+  select status into v_status from public.issues where id = v_locked;
+  if v_status <> 'todo' then
+    raise exception 'GitHub closing a parent with an open child must leave it open; got %', v_status;
+  end if;
+  perform set_config('devdock.via', '', true);
 end;
 $$;
 
