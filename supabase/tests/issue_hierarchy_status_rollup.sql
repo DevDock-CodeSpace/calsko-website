@@ -14,6 +14,8 @@ declare
   v_child_two uuid;
   v_status public.issue_status;
   v_via text;
+  v_repo uuid;
+  v_locked uuid;
 begin
   insert into auth.users (id, instance_id, aud, role, email, raw_user_meta_data)
   values (v_user, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
@@ -102,6 +104,37 @@ begin
   if v_status <> 'in_progress' then
     raise exception 'An active child must revive a canceled parent; got %', v_status;
   end if;
+
+  -- No signed-in user here, so the GitHub status lock applies as it does to a member.
+  insert into public.github_installations (team_id, installation_id, account_login, account_type)
+  values (v_team, 999999001, 'issue-hierarchy-check', 'User');
+  insert into public.repos (team_id, owner, name, github_repo_id, installation_id)
+  values (v_team, 'issue-hierarchy-check', 'repo', 999999001, 999999001)
+  returning id into v_repo;
+  insert into public.workspace_repos (workspace_id, repo_id, team_id, base_branch)
+  values (v_workspace, v_repo, v_team, 'main');
+
+  insert into public.issues (workspace_id, title, status, repo_id)
+  values (v_workspace, 'GitHub-linked parent', 'todo', v_repo)
+  returning id into v_parent;
+  insert into public.issues (workspace_id, title, status, parent_id)
+  values (v_workspace, 'Plain child', 'todo', v_parent)
+  returning id into v_child_one;
+  update public.issues set status = 'done' where id = v_child_one;
+  select status into v_status from public.issues where id = v_parent;
+  if v_status <> 'done' then
+    raise exception 'Finishing the last child must complete a GitHub-linked parent; got %', v_status;
+  end if;
+
+  insert into public.issues (workspace_id, title, status, repo_id)
+  values (v_workspace, 'GitHub-linked issue', 'todo', v_repo)
+  returning id into v_locked;
+  begin
+    update public.issues set status = 'done' where id = v_locked;
+    raise exception 'Setting Done by hand on a GitHub-linked issue must still be blocked';
+  exception when sqlstate 'DD001' then
+    null;
+  end;
 end;
 $$;
 
