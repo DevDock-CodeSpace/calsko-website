@@ -648,7 +648,6 @@ async function syncIssueHierarchy(
   if (issue.parent_id) {
     parent = await readCalskoIssue(asUser, issue.parent_id)
     if (parent.workspace_id !== issue.workspace_id) throw new HttpError(409, 'repo_mismatch')
-    if (parent.repo_id !== issue.repo_id) throw new HttpError(409, 'repo_mismatch')
   } else {
     const { data: existing, error } = await admin
       .from('issue_github_links')
@@ -662,9 +661,6 @@ async function syncIssueHierarchy(
     if (!existing) return { issue: null, parent: null }
   }
 
-  const repoId = issue.repo_id
-  if (!repoId) return { issue: null, parent: null }
-
   const { data: links, error: linksError } = await asUser
     .from('workspace_repos')
     .select('repo_id, repos!workspace_repos_repo_fkey(id, owner, name, github_repo_id, installation_id)')
@@ -673,7 +669,20 @@ async function syncIssueHierarchy(
     console.error('[github] reading issue repositories failed', linksError)
     throw new HttpError(500, 'server_error')
   }
-  const repoLink = ((links ?? []) as unknown as IssueRepoLink[]).find((link) => link.repo_id === repoId)
+  const repoLinks = (links ?? []) as unknown as IssueRepoLink[]
+  const onGitHub = (id: string | null) => {
+    const repo = repoLinks.find((link) => link.repo_id === id)?.repos
+    return Boolean(repo?.github_repo_id && repo.installation_id)
+  }
+  // Different repos only matter when one of them is on GitHub.
+  if (parent && parent.repo_id !== issue.repo_id) {
+    if (!onGitHub(parent.repo_id) && !onGitHub(issue.repo_id)) return { issue: null, parent: null }
+    throw new HttpError(409, 'repo_mismatch')
+  }
+
+  const repoId = issue.repo_id
+  if (!repoId) return { issue: null, parent: null }
+  const repoLink = repoLinks.find((link) => link.repo_id === repoId)
   if (!repoLink?.repos) throw new HttpError(404, 'repo_not_found')
   if (!repoLink.repos.github_repo_id || !repoLink.repos.installation_id) return { issue: null, parent: null }
 

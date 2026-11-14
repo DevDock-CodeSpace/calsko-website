@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { useAuth } from '@/features/auth/hooks'
 import { teamPlansQuery } from '@/features/plans/api'
-import { workspaceReposQuery } from '@/features/repos/api'
+import { workspaceReposQuery, type Repo } from '@/features/repos/api'
 import { useCurrentWorkspace } from '@/features/teams/hooks'
 import { workspaceMembersQuery } from '@/features/workspaces/api'
 import { errorMessage } from '@/lib/errors'
@@ -55,6 +55,11 @@ function hierarchyChanged(issue: Pick<Issue, 'parent_id' | 'repo_id'>, patch: Is
       patch.repo_id !== issue.repo_id &&
       patch.repo_id !== null)
   )
+}
+
+/** Nesting only syncs in projects with a repo connected to GitHub; when the repos aren't known, ask the server. */
+function hasGitHubRepo(repos: readonly Pick<Repo, 'github_repo_id' | 'installation_id'>[] | undefined) {
+  return repos === undefined || repos.some((repo) => repo.github_repo_id !== null && repo.installation_id !== null)
 }
 
 /**
@@ -120,7 +125,7 @@ export function useUpdateIssue() {
         }
       }
       if (labelIds) await setIssueLabels(issue.id, labelIds)
-      if (hierarchyChanged(issue, patch)) {
+      if (hierarchyChanged(issue, patch) && hasGitHubRepo(queryClient.getQueryData(workspaceReposQuery(workspace.id).queryKey))) {
         void syncIssueHierarchy(issue.id).catch((error) =>
           toast.error(`Saved in Calsko, but GitHub nesting couldn’t be synced: ${errorMessage(error)}`),
         )
@@ -183,7 +188,9 @@ export function useUpdateIssue() {
 
 type TeamUpdateVars = {
   /** `workspace.repos` (the group list has them) saves looking the project's repos up. */
-  issue: Pick<Issue, 'id' | 'number' | 'status' | 'parent_id' | 'repo_id'> & { workspace: { id: string; repos?: unknown[] } }
+  issue: Pick<Issue, 'id' | 'number' | 'status' | 'parent_id' | 'repo_id'> & {
+    workspace: { id: string; repos?: Pick<Repo, 'github_repo_id' | 'installation_id'>[] }
+  }
   patch: IssuePatch
 }
 
@@ -224,7 +231,7 @@ export function useUpdateTeamIssue(teamId: string) {
         done()
         throw error
       }
-      if (hierarchyChanged(issue, patch)) {
+      if (hierarchyChanged(issue, patch) && hasGitHubRepo(issue.workspace.repos)) {
         void syncIssueHierarchy(issue.id).catch((error) =>
           toast.error(`Saved in Calsko, but GitHub nesting couldn’t be synced: ${errorMessage(error)}`),
         )
