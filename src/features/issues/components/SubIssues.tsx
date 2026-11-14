@@ -8,15 +8,18 @@ import { issuePath } from '@/features/teams/nav'
 import { cn } from '@/lib/utils'
 import { workspaceIssuesQuery, type IssueDetail } from '../api'
 import { useIssueContext, useUpdateIssue } from '../hooks'
-import { compareIssues, isClosed, issueIdentifier, statusLabel } from '../meta'
+import { compareIssues, isClosed, issueIdentifier, priorityLabel, statusLabel } from '../meta'
 import { CreateIssueDialog } from './CreateIssueDialog'
+import { LabelChip } from './LabelChip'
+import { PriorityIcon } from './PriorityIcon'
+import { PriorityPicker } from './PriorityPicker'
 import { StatusIcon } from './StatusIcon'
 import { StatusPicker } from './StatusPicker'
 
 /** The issue's direct sub-issues with a progress bar, like Linear; "+" creates one. */
 export function SubIssues({ issue }: { issue: IssueDetail }) {
   const { team } = useCurrentTeam()
-  const { workspace, members } = useIssueContext()
+  const { workspace, members, labels } = useIssueContext()
   const all = useSuspenseQuery(workspaceIssuesQuery(workspace.id)).data
   const update = useUpdateIssue()
   const [creating, setCreating] = useState(false)
@@ -49,15 +52,29 @@ export function SubIssues({ issue }: { issue: IssueDetail }) {
         <ul className="divide-y border-y">
           {children.map((child) => {
             const assignee = members.find((m) => m.user_id === child.assignee_id)
+            const childLabels = labels.filter((label) => child.labelIds.includes(label.id))
             return (
-              <li key={child.id} className="relative flex h-9 items-center gap-2 px-2 text-sm hover:bg-muted/50">
+              <li key={child.id} className="relative flex min-h-9 flex-wrap items-center gap-2 px-2 py-1 text-sm hover:bg-muted/50">
+                <PriorityPicker value={child.priority} onChange={(priority) => update.mutate({ issue: child, patch: { priority } })}>
+                  <button
+                    type="button"
+                    className="relative z-10 inline-flex h-6 shrink-0 items-center gap-1 rounded-sm px-1 hover:bg-muted"
+                    aria-label={`Priority: ${priorityLabel[child.priority]}`}
+                    title={`Priority: ${priorityLabel[child.priority]}`}
+                  >
+                    <PriorityIcon priority={child.priority} />
+                    <span className="text-xs text-muted-foreground">{priorityLabel[child.priority]}</span>
+                  </button>
+                </PriorityPicker>
                 <StatusPicker value={child.status} onChange={(status) => update.mutate({ issue: child, patch: { status } })}>
                   <button
                     type="button"
-                    className="relative z-10 flex size-6 items-center justify-center rounded-sm hover:bg-muted"
+                    className="relative z-10 inline-flex h-6 shrink-0 items-center gap-1 rounded-sm px-1 hover:bg-muted"
                     aria-label={`Status: ${statusLabel[child.status]}`}
+                    title={`Status: ${statusLabel[child.status]}`}
                   >
                     <StatusIcon status={child.status} />
+                    <span className="text-xs text-muted-foreground">{statusLabel[child.status]}</span>
                   </button>
                 </StatusPicker>
                 <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">
@@ -72,10 +89,27 @@ export function SubIssues({ issue }: { issue: IssueDetail }) {
                 >
                   {child.title}
                 </Link>
+                {childLabels.length > 0 && (
+                  <span
+                    className="relative z-10 flex min-w-0 items-center gap-1"
+                    title={childLabels.map((label) => label.name).join(', ')}
+                  >
+                    {childLabels.slice(0, 2).map((label) => (
+                      <LabelChip key={label.id} label={label} className="max-w-28" />
+                    ))}
+                    {childLabels.length > 2 && (
+                      <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                        +{childLabels.length - 2}
+                      </span>
+                    )}
+                  </span>
+                )}
                 {assignee ? (
-                  <PersonAvatar profile={assignee.profile} className="size-5" />
+                  <span className="relative z-10 shrink-0">
+                    <PersonAvatar profile={assignee.profile} className="size-5" />
+                  </span>
                 ) : (
-                  <CircleUserRound className="size-4 text-muted-foreground/60" />
+                  <CircleUserRound className="relative z-10 size-4 shrink-0 text-muted-foreground/60" />
                 )}
               </li>
             )

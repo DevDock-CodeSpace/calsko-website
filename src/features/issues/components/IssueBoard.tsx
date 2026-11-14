@@ -63,7 +63,7 @@ export function IssueBoard({ issues, onCreate }: { issues: Issue[]; onCreate: (s
                   <Plus className="size-3.5" />
                 </button>
               </div>
-              <ul className="flex min-h-24 flex-col gap-2 px-2 pb-2">
+              <ul className="flex max-h-80 min-h-24 flex-col gap-2 overflow-y-auto overscroll-contain px-2 pb-2">
                 {items.map((issue) => (
                   <IssueCard
                     key={issue.id}

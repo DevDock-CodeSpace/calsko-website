@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { issueBranchesQuery, pullRequestsQuery, type IssueDetail, type IssuePullRequest } from '../api'
 import { useCreateIssueBranch, useIssueContext } from '../hooks'
-import { issueBranchName } from '../meta'
+import { issueBranchRepo } from '../meta'
 
 const stateIcon: Record<IssuePullRequest['state'], { icon: typeof GitPullRequest; className: string; label: string }> = {
   draft: { icon: GitPullRequestDraft, className: 'text-muted-foreground', label: 'Draft' },
@@ -20,21 +20,22 @@ const stateIcon: Record<IssuePullRequest['state'], { icon: typeof GitPullRequest
  * GitHub told us about. Hidden in projects without repos unless there's history.
  */
 export function IssueDevelopment({ issue }: { issue: IssueDetail }) {
-  const { workspace, repos } = useIssueContext()
+  const { repos } = useIssueContext()
   const [{ data: pullRequests }, { data: branches }] = useSuspenseQueries({ queries: [pullRequestsQuery(issue.id), issueBranchesQuery(issue.id)] })
   const createBranch = useCreateIssueBranch()
   const [copied, setCopied] = useState(false)
   if (repos.length === 0 && pullRequests.length === 0 && branches.length === 0) return null
 
   const created = branches[0]
+  const baseBranchConfigured = issueBranchRepo(repos, issue.repo_id)?.base_branch != null
   // Once merged, GitHub deletes the branch ("Automatically delete head branches"), so link to the PR.
   const mergedPr = created && pullRequests.find((pr) => pr.state === 'merged' && pr.head_ref === created.name)
-  const branch =created?.name ?? issueBranchName(workspace.issue_key, issue.number, issue.title)
+  const branch = created?.name ?? null
   // The branch goes in the issue's repo, or the project's only repo.
-  const canCreate = !created && (issue.repo_id !== null || repos.length === 1)
-  const copy = async () => {
+  const canCreate = !created && baseBranchConfigured && (issue.repo_id !== null || repos.length === 1)
+  const copy = async (name: string) => {
     try {
-      await navigator.clipboard.writeText(branch)
+      await navigator.clipboard.writeText(name)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
@@ -45,7 +46,7 @@ export function IssueDevelopment({ issue }: { issue: IssueDetail }) {
   return (
     <section aria-label="Development" className="mt-6 space-y-2 border-t pt-4">
       <h2 className="px-2 text-xs text-muted-foreground">Development</h2>
-      {created && mergedPr && (
+      {branch && created && mergedPr && (
         <a
           href={mergedPr.url}
           target="_blank"
@@ -58,7 +59,7 @@ export function IssueDevelopment({ issue }: { issue: IssueDetail }) {
           <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">merged</span>
         </a>
       )}
-      {created && !mergedPr && (
+      {branch && created && !mergedPr && (
         <a
           href={created.repo ? `https://github.com/${created.repo.owner}/${created.repo.name}/tree/${created.name}` : undefined}
           target="_blank"
@@ -70,10 +71,10 @@ export function IssueDevelopment({ issue }: { issue: IssueDetail }) {
           <span className="truncate font-mono text-xs">{created.name}</span>
         </a>
       )}
-      {!mergedPr && (
+      {branch && !mergedPr && (
         <button
           type="button"
-          onClick={() => void copy()}
+          onClick={() => branch && void copy(branch)}
           title="Copy the git branch name. A pull request from this branch (or mentioning the issue ID) links here and moves the issue."
           className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-brand focus-visible:outline-none"
         >
@@ -94,8 +95,11 @@ export function IssueDevelopment({ issue }: { issue: IssueDetail }) {
           <span className="truncate text-xs">Create branch on GitHub</span>
         </button>
       )}
-      {!created && !canCreate && repos.length > 1 && (
+      {!created && !canCreate && repos.length > 1 && issue.repo_id === null && (
         <p className="px-2 text-xs text-muted-foreground">Set the Repo to create a branch.</p>
+      )}
+      {!created && !canCreate && repos.length > 0 && (issue.repo_id !== null || repos.length === 1) && !baseBranchConfigured && (
+        <p className="px-2 text-xs text-muted-foreground">Choose a base branch in GitHub settings to create an issue branch.</p>
       )}
       {pullRequests.length > 0 && (
         <ul className="space-y-0.5">

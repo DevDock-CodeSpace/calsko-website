@@ -42,7 +42,7 @@ Server secrets (JaaS, GitHub App, Gemini) are Edge Function secrets: `supabase s
 
 1. GitHub → Developer settings → GitHub Apps → New. Callback URL `<origin>/github/callback`; tick "Request user authorization
    during installation"; webhook URL `https://<project-ref>.supabase.co/functions/v1/github-webhook` with a secret; subscribe to
-   **Pull request**; permissions Contents read/write, Pull requests read-only.
+   **Pull request**; permissions Contents read/write, Issues read/write, Pull requests read-only.
    Connect GitHub starts with GitHub sign-in for the App (it returns to the Callback URL, the first one if there are
    several), then offers the accounts that already have the App, or goes on to install it. The install page alone never
    comes back when the App is already on the account.
@@ -50,6 +50,15 @@ Server secrets (JaaS, GitHub App, Gemini) are Edge Function secrets: `supabase s
    `openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in key.pem -out key-pkcs8.pem`.
 3. `supabase secrets set GITHUB_APP_ID=… GITHUB_CLIENT_ID=… GITHUB_CLIENT_SECRET=… GITHUB_WEBHOOK_SECRET=…` and
    `GITHUB_APP_PRIVATE_KEY="$(cat key-pkcs8.pem)"`; delete the `.pem` files. Set `VITE_GITHUB_APP_SLUG` in Vercel.
+
+Calsko creates matching GitHub issues only when needed to mirror a parent/sub-issue relationship; a top-level issue does
+not create a GitHub issue on its own. Calsko remains the source of truth for nesting; GitHub pull request events can
+advance issue statuses, but manual status and nesting changes made directly on GitHub are not imported. Parent and child
+must use the same connected repo. GitHub issue titles are created from the
+Calsko identifier and title; later title or description edits are not synced. Existing Calsko issues are not backfilled
+automatically. In Calsko, a parent moves to In Progress when any descendant starts and becomes Done when all descendants
+are Done, including when their status was set manually or by an import. Workspace managers can manually mark a parent
+Done earlier, but a later child status change may reopen it if its descendants are not all Done.
 
 ## Meetings and calendars
 Add-to-calendar links and `.ics` downloads need no setup. Google Calendar sync needs the sensitive `calendar.events` scope:

@@ -15,7 +15,7 @@ import { errorMessage } from '@/lib/errors'
 import { deleteIssue, issueBranchesQuery, issueKeys, workspaceIssuesQuery, type IssueDetail } from '../api'
 import { copyBranchName } from '../copyBranch'
 import { useIssueContext, useUpdateIssue } from '../hooks'
-import { issueBranchName, issueIdentifier } from '../meta'
+import { issueIdentifier } from '../meta'
 import type { MenuKind } from '../nav-context'
 import { useShortcuts } from '../shortcuts'
 import { IssueActivity } from './IssueActivity'
@@ -33,19 +33,16 @@ import { ownWrite } from '@/lib/realtime'
  */
 export default function IssueView({ issue }: { issue: IssueDetail }) {
   const { team } = useCurrentTeam()
-  const { workspace, canManage, userId, repos } = useIssueContext()
+  const { workspace, canManage, userId } = useIssueContext()
   const issues = useSuspenseQuery(workspaceIssuesQuery(workspace.id)).data
   const update = useUpdateIssue()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const parent = issues.find((i) => i.id === issue.parent_id)
   const id = issueIdentifier(workspace.issue_key, issue.number)
-  // The branch it has (the Development block already loads these), else the name it would get.
+  // Only an actual GitHub branch has a name to show.
   const branches = useQuery(issueBranchesQuery(issue.id)).data
-  const branchName =
-    repos.length > 0 || (branches?.length ?? 0) > 0
-      ? (branches?.[0]?.name ?? issueBranchName(workspace.issue_key, issue.number, issue.title))
-      : null
+  const branchName = branches?.[0]?.name ?? null
 
   // ------------------------------------------------------------ shortcuts
   // S/P/A/L/⇧C open the property menus, I assigns to me, Esc goes back, ? shows help.

@@ -49,7 +49,7 @@ function reply(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
-async function validSignature(secret: string, body: Uint8Array, header: string | null) {
+async function validSignature(secret: string, body: ArrayBuffer, header: string | null) {
   if (!header?.startsWith('sha256=')) return false
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, [
     'sign',
@@ -133,7 +133,17 @@ async function onPullRequest(admin: SupabaseClient, payload: Record<string, unkn
           p_into_done: mergedIntoDone,
         })
         if (promoteError) throw promoteError
-        for (const number of (released as number[] | null) ?? []) moved.push(`${key ?? '?'}-${number} → done`)
+        const releasedNumbers = (released as number[] | null) ?? []
+        if (releasedNumbers.length > 0) {
+          const { data: completed, error: completedError } = await admin
+            .from('issues')
+            .select('number')
+            .eq('workspace_id', link.workspace_id)
+            .in('number', releasedNumbers)
+            .eq('status', 'done')
+          if (completedError) throw completedError
+          for (const issue of completed ?? []) moved.push(`${key ?? '?'}-${issue.number} → done`)
+        }
       }
 
       const numbers = mentions.filter((m) => m.key === key).map((m) => m.number)
@@ -165,7 +175,17 @@ async function onPullRequest(admin: SupabaseClient, payload: Record<string, unkn
           p_merged_into_done: mergedIntoDone,
         })
         if (applyError) throw applyError
-        moved.push(`${key}-${issue.number}${status ? ` → ${status}` : ''}`)
+        let actualStatus = status
+        if (status === 'done') {
+          const { data: current, error: currentError } = await admin
+            .from('issues')
+            .select('status')
+            .eq('id', issue.id)
+            .maybeSingle()
+          if (currentError) throw currentError
+          actualStatus = current?.status ?? status
+        }
+        moved.push(`${key}-${issue.number}${actualStatus ? ` → ${actualStatus}` : ''}`)
       }
     }
   }
@@ -229,7 +249,7 @@ Deno.serve(async (req) => {
   const secret = Deno.env.get('GITHUB_WEBHOOK_SECRET')
   if (!secret) return reply({ error: 'not_configured' }, 503)
 
-  const body = new Uint8Array(await req.arrayBuffer())
+  const body = await req.arrayBuffer()
   if (!(await validSignature(secret, body, req.headers.get('X-Hub-Signature-256')))) {
     return reply({ error: 'bad_signature' }, 401)
   }

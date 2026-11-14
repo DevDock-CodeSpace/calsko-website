@@ -21,6 +21,7 @@ export function TeamIssueRow({
   showProject,
   plans,
   update,
+  onDelete,
 }: {
   issue: TeamIssue
   subIssues?: { done: number; total: number }
@@ -31,6 +32,7 @@ export function TeamIssueRow({
   /** The group's plans (the page's one list). */
   plans: Plan[]
   update: (issue: TeamIssue, patch: IssuePatch) => void
+  onDelete?: () => void
 }) {
   const [wanted, setWanted] = useState(false)
   // Disabled until a menu opens; once one row has loaded them, every row of the project reads the cache.
@@ -46,6 +48,7 @@ export function TeamIssueRow({
       issue={issue}
       subIssues={subIssues}
       nest={nest}
+      onDelete={onDelete}
       source={{
         href: issuePath(teamSlug, issue.workspace.id, issue.number),
         workspace: issue.workspace,

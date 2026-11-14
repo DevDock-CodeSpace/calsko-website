@@ -1,14 +1,21 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
+import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { useCurrentTeam } from '@/features/teams/hooks'
 import { issuePath } from '@/features/teams/nav'
-import type { Issue, IssueStatus } from '../api'
+import { errorMessage } from '@/lib/errors'
+import { ownWrite } from '@/lib/realtime'
+import { deleteIssue, issueKeys, type Issue, type IssueStatus } from '../api'
 import { useIssueContext, useUpdateIssue } from '../hooks'
+import { issueIdentifier } from '../meta'
 import { IssueNavContext, type MenuKind } from '../nav-context'
 import { moveIssueFocus, useShortcuts } from '../shortcuts'
 import { CreateIssueDialog } from './CreateIssueDialog'
 import { IssueBoard } from './IssueBoard'
 import { IssueList } from './IssueList'
+import { IssueRow } from './IssueRow'
 import { ShortcutsDialog } from './ShortcutsDialog'
 
 type IssueCollectionProps = {
@@ -46,15 +53,37 @@ export function IssueCollection({
   onCreatingChange: setCreating,
 }: IssueCollectionProps) {
   const { team } = useCurrentTeam()
-  const { workspace, userId } = useIssueContext()
+  const { workspace, userId, canManage } = useIssueContext()
   const update = useUpdateIssue()
+  const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [activeId, setActiveId] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ issueId: string; kind: MenuKind } | null>(null)
   const [help, setHelp] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Issue | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const active = issues.find((i) => i.id === activeId)
   const open = (kind: MenuKind) => () => active && setMenu({ issueId: active.id, kind })
+  const remove = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      ownWrite('issues', deleteTarget.id, 15_000)
+      await deleteIssue(deleteTarget.id)
+      toast.success(`${issueIdentifier(workspace.issue_key, deleteTarget.number)} was deleted`)
+      setDeleteTarget(null)
+      queryClient.removeQueries({ queryKey: issueKeys.detail(workspace.id, deleteTarget.number) })
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: issueKeys.workspace(workspace.id) }),
+        queryClient.invalidateQueries({ queryKey: ['issues', 'team'] }),
+      ]).catch((error) => toast.error(errorMessage(error)))
+    } catch (error) {
+      toast.error(errorMessage(error))
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   useShortcuts({
     c: () => setCreating('todo'),
@@ -84,8 +113,29 @@ export function IssueCollection({
       ) : view === 'board' ? (
         <IssueBoard issues={issues} onCreate={setCreating} />
       ) : (
-        <IssueList issues={issues} onCreate={setCreating} nested={nested} />
+        <IssueList
+          issues={issues}
+          onCreate={setCreating}
+          nested={nested}
+          row={(issue, subIssues, nest) => (
+            <IssueRow
+              issue={issue}
+              subIssues={subIssues}
+              nest={nest}
+              onDelete={canManage ? () => setDeleteTarget(issue) : undefined}
+            />
+          )}
+        />
       )}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title={deleteTarget ? `Delete ${issueIdentifier(workspace.issue_key, deleteTarget.number)}?` : 'Delete issue?'}
+        description="This can’t be undone. Its comments are deleted too; its sub-issues are kept and become top-level issues."
+        confirmLabel="Delete issue"
+        pending={deleting}
+        onConfirm={() => void remove()}
+      />
       {/* Keyed so its fields reset to where it was opened from. */}
       <CreateIssueDialog
         key={creating ?? 'closed'}

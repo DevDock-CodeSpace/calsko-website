@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, CircleUserRound, GitBranch, Gauge, IterationCw } from 'lucide-react'
+import { ChevronRight, CircleUserRound, GitBranch, Gauge, IterationCw, Trash2 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { PersonAvatar } from '@/components/PersonRow'
@@ -10,11 +10,13 @@ import type { Repo } from '@/features/repos/api'
 import { GitHubMark } from '@/features/repos/components/GitHubMark'
 import type { WorkspaceMember } from '@/features/workspaces/api'
 import { formatShortDate, localDateISO } from '@/lib/format'
+import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 import { issueBranchesQuery, type Issue, type IssueCycle, type IssueLabel, type IssuePatch } from '../api'
 import { copyBranchName } from '../copyBranch'
 import { cycleTitle } from '../cycles'
-import { ESTIMATE_HOURS, hoursLabel, isClosed, issueBranchName, issueIdentifier, priorityLabel, statusLabel } from '../meta'
+import { ESTIMATE_HOURS, hoursLabel, isClosed, issueBranchRepo, issueIdentifier, priorityLabel, statusLabel } from '../meta'
 import { useRowNav, type MenuKind } from '../nav-context'
 import { AssigneePicker } from './AssigneePicker'
 import type { RowNest } from './IssueList'
@@ -25,6 +27,7 @@ import { Picker } from './Picker'
 import { PriorityIcon } from './PriorityIcon'
 import { PriorityPicker } from './PriorityPicker'
 import { RepoPicker } from './RepoPicker'
+import type { BaseBranchCheck } from '@/features/repos/components/BaseBranchWarning'
 import { StatusIcon } from './StatusIcon'
 import { StatusPicker } from './StatusPicker'
 
@@ -35,7 +38,7 @@ export type IssueRowSource = {
   members: WorkspaceMember[]
   labels: IssueLabel[]
   cycles: IssueCycle[]
-  repos: Repo[]
+  repos: (Repo & { base_branch: string | null })[]
   /** The group's plans (one list for the whole group). */
   plans: Plan[]
   userId: string
@@ -44,6 +47,8 @@ export type IssueRowSource = {
   project?: string
   /** Called when a menu opens (the group-wide page loads that project's lists then). */
   onMenuOpen?: () => void
+  /** Warns after picking a repo without a base branch (the project's own list). */
+  baseBranchCheck?: BaseBranchCheck
 }
 
 const iconButton =
@@ -65,6 +70,7 @@ export function IssueRowView({
   issue,
   subIssues,
   nest,
+  onDelete,
   source,
   children,
 }: {
@@ -72,6 +78,7 @@ export function IssueRowView({
   subIssues?: { done: number; total: number }
   /** In a nested list: indented by depth, with an arrow that opens its sub-issues. */
   nest?: RowNest
+  onDelete?: () => void
   source: IssueRowSource
   /** Extra menus anchored in the row (the project list's shortcut-only menus). */
   children?: ReactNode
@@ -82,6 +89,7 @@ export function IssueRowView({
   const cycle = cycles.find((c) => c.id === issue.cycle_id)
   const plan = plans.find((p) => p.id === issue.plan_id)
   const repo = repos.find((r) => r.id === issue.repo_id)
+  const baseBranchConfigured = issueBranchRepo(repos, issue.repo_id)?.base_branch != null
   const [today] = useState(() => localDateISO(new Date()))
   const assignee = members.find((m) => m.user_id === issue.assignee_id)
   const issueLabels = labels.filter((l) => issue.labelIds.includes(l.id))
@@ -104,10 +112,10 @@ export function IssueRowView({
       data-issue-row={issue.id}
       onMouseEnter={nav.focus}
       className={cn(
-        'group relative flex h-10 items-center gap-2 px-3 text-sm hover:bg-muted/50 has-[a:focus-visible]:bg-muted/50',
+        'group relative flex h-9 items-center gap-2 px-3 text-sm hover:bg-muted/50 has-[a:focus-visible]:bg-muted/50',
         nav.active && 'bg-muted/60 before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-brand',
       )}
-      style={nest?.depth ? { paddingLeft: `${0.75 + nest.depth * 1.5}rem` } : undefined}
+      style={nest?.depth ? { paddingLeft: `${nest.depth * 0.75}rem` } : undefined}
     >
       {nest &&
         (nest.onToggle ? (
@@ -152,7 +160,7 @@ export function IssueRowView({
           {subIssues.done}/{subIssues.total}
         </span>
       )}
-      {repos.length > 0 && (
+      {baseBranchConfigured && (
         <button
           type="button"
           className={cn(
@@ -162,14 +170,18 @@ export function IssueRowView({
           )}
           aria-label="Copy branch name"
           title="Copy branch name"
-          // The branch it has (one request, on click), else the name it would get.
-          onClick={() =>
-            void copyBranchName(
-              queryClient
-                .fetchQuery({ ...issueBranchesQuery(issue.id), staleTime: 0 })
-                .then((branches) => branches[0]?.name ?? issueBranchName(workspace.issue_key, issue.number, issue.title)),
+          onClick={() => {
+            void queryClient.fetchQuery({ ...issueBranchesQuery(issue.id), staleTime: 0 }).then(
+              (branches) => {
+                if (!branches[0]) {
+                  toast.error('Create the issue branch first to copy its name.')
+                  return
+                }
+                return copyBranchName(branches[0].name)
+              },
+              (error) => toast.error(errorMessage(error)),
             )
-          }
+          }}
         >
           <GitBranch className="size-3.5" />
         </button>
@@ -199,7 +211,13 @@ export function IssueRowView({
         </CyclePicker>
       )}
       {repo && (
-        <RepoPicker value={issue.repo_id} repos={repos} align="end" onChange={(repo_id) => update({ repo_id })}>
+        <RepoPicker
+          value={issue.repo_id}
+          repos={repos}
+          align="end"
+          onChange={(repo_id) => update({ repo_id })}
+          check={source.baseBranchCheck}
+        >
           <button
             type="button"
             className={cn(chip, 'max-w-32 lg:flex')}
@@ -290,6 +308,21 @@ export function IssueRowView({
         {formatShortDate(issue.created_at)}
       </span>
       {children}
+      {onDelete && (
+        <button
+          type="button"
+          className={cn(
+            iconButton,
+            'text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 hover:text-destructive',
+            nav.active && 'opacity-100',
+          )}
+          aria-label={`Delete ${id}`}
+          title="Delete issue"
+          onClick={onDelete}
+        >
+          <Trash2 className="size-3.5" />
+        </button>
+      )}
     </li>
   )
 }

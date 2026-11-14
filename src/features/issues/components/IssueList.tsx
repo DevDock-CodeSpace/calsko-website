@@ -108,7 +108,7 @@ function IssueGroup<T extends Issue>({ status, items, onCreate, render }: IssueG
 
   return (
     <section aria-label={statusLabel[status]}>
-      <div className="flex h-9 items-center gap-2 border-b bg-muted/40 px-3">
+      <div className="flex h-8 items-center gap-2 border-b bg-muted/40 px-3">
         <button
           type="button"
           onClick={() => setCollapsed((open) => !open)}
@@ -143,7 +143,7 @@ function IssueGroup<T extends Issue>({ status, items, onCreate, render }: IssueG
               ref={moreRef}
               type="button"
               onClick={showMore}
-              className="flex h-9 w-full items-center gap-2 border-b px-3 text-sm text-muted-foreground last:border-b-0 hover:bg-muted/50 hover:text-foreground"
+              className="flex h-8 w-full items-center gap-2 border-b px-3 text-sm text-muted-foreground last:border-b-0 hover:bg-muted/50 hover:text-foreground"
             >
               <ChevronDown className="size-3.5" />
               Show {Math.min(remaining, PAGE_SIZE)} more
