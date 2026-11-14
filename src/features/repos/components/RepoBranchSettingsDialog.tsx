@@ -1,14 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, LoaderCircle, Plus, X } from 'lucide-react'
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import type { Issue } from '@/features/issues/api'
-import { issueBranchName, issueIdentifier } from '@/features/issues/meta'
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { errorMessage } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { repoBranchesQuery, repoFullName, repoKeys, updateRepoBranches, type LinkedRepo } from '../api'
@@ -26,22 +24,10 @@ const isValidBranchName = (name: string) => BRANCH_NAME_RE.test(name)
  */
 export function RepoBranchSettingsDialog({
   workspaceId,
-  issueKey,
-  issues,
-  issuesEnabled,
-  issuesLoading,
-  issuesError,
-  repoCount,
   repo,
   onOpenChange,
 }: {
   workspaceId: string
-  issueKey: string
-  issues: Issue[]
-  issuesEnabled: boolean
-  issuesLoading: boolean
-  issuesError: string | null
-  repoCount: number
   repo: LinkedRepo
   onOpenChange: (open: boolean) => void
 }) {
@@ -53,7 +39,11 @@ export function RepoBranchSettingsDialog({
   const [baseCustom, setBaseCustom] = useState(repo.base_branch ?? '')
   const [done, setDone] = useState<string[]>(repo.done_branches)
   const [custom, setCustom] = useState('')
-  const [previewIssueId, setPreviewIssueId] = useState<string | null>(null)
+  const [baseOptionsOpen, setBaseOptionsOpen] = useState(false)
+  const [doneOptionsOpen, setDoneOptionsOpen] = useState(false)
+  const [baseSearch, setBaseSearch] = useState('')
+  const baseInputWrapper = useRef<HTMLDivElement>(null)
+  const doneInputWrapper = useRef<HTMLDivElement>(null)
 
   const validateBranchName = (name: string) => {
     if (!isValidBranchName(name)) {
@@ -64,17 +54,48 @@ export function RepoBranchSettingsDialog({
   }
 
   // GitHub's branches, plus any saved or typed ones GitHub doesn't list (yet).
-  const names = [...new Set([...(github.data?.branches ?? []), ...done, ...(base ? [base] : [])])].sort((a, b) =>
-    a.localeCompare(b),
+  const names = useMemo(
+    () => [...new Set([...(github.data?.branches ?? []), ...done, ...(base ? [base] : [])])].sort((a, b) => a.localeCompare(b)),
+    [base, done, github.data?.branches],
   )
-  const branchableIssues = useMemo(
-    () => issues.filter((issue) => issue.repo_id === repo.id || (repoCount === 1 && issue.repo_id === null)),
-    [issues, repo.id, repoCount],
-  )
-  const previewIssue = useMemo(
-    () => branchableIssues.find((issue) => issue.id === previewIssueId),
-    [branchableIssues, previewIssueId],
-  )
+  const baseOptions = useMemo(() => {
+    const query = baseSearch.trim().toLowerCase()
+    return [DEFAULT, ...names].filter((name) => {
+      const label = name === DEFAULT ? 'None' : name
+      return !query || label.toLowerCase().includes(query)
+    })
+  }, [baseSearch, names])
+  const doneOptions = useMemo(() => {
+    const query = custom.trim().toLowerCase()
+    return names.filter((name) => !query || name.toLowerCase().includes(query))
+  }, [custom, names])
+  const setBaseOptions = (open: boolean) => {
+    setBaseOptionsOpen(open)
+    if (open) setDoneOptionsOpen(false)
+    else setBaseSearch('')
+  }
+  const chooseBase = (name: string) => {
+    const next = name === DEFAULT ? null : name
+    setBase(next)
+    setBaseCustom(next ?? '')
+    setBaseOptions(false)
+  }
+  const setCustomBase = (value: string) => {
+    const next = value.trimStart()
+    setBaseCustom(next)
+    setBase(next.trim() || null)
+    setBaseSearch(next)
+  }
+  const openBaseOptions = () => {
+    if (baseOptionsOpen) return
+    setDoneOptionsOpen(false)
+    setBaseSearch('')
+    setBaseOptionsOpen(true)
+  }
+  const openDoneOptions = () => {
+    setBaseOptionsOpen(false)
+    setDoneOptionsOpen(true)
+  }
   const toggle = (name: string) =>
     setDone((prev) => (prev.includes(name) ? prev.filter((n) => n !== name) : prev.length < MAX_DONE ? [...prev, name] : prev))
   const addCustom = (event: FormEvent) => {
@@ -84,6 +105,7 @@ export function RepoBranchSettingsDialog({
     if (!validateBranchName(name)) return
     if (!done.includes(name)) toggle(name)
     setCustom('')
+    setDoneOptionsOpen(false)
   }
 
   const validateSettings = () => {
@@ -108,7 +130,7 @@ export function RepoBranchSettingsDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[min(85dvh,48rem)] overflow-y-auto sm:max-w-xl">
+      <DialogContent className="max-h-[min(85dvh,48rem)] overflow-x-hidden overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Branch settings</DialogTitle>
           <DialogDescription>
@@ -127,108 +149,81 @@ export function RepoBranchSettingsDialog({
           </p>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="min-w-0 space-y-2">
-            <Label htmlFor="base-branch">New issue branches start from</Label>
-            <Select
-              value={base ?? DEFAULT}
-              onValueChange={(v) => {
-                const next = v === DEFAULT ? null : v
-                setBase(next)
-                setBaseCustom(next ?? '')
+        <div className="space-y-2">
+          <Label id="base-branch-label">New issue branches start from</Label>
+          <Popover open={baseOptionsOpen} onOpenChange={setBaseOptions}>
+            <PopoverAnchor asChild>
+              <div ref={baseInputWrapper} className="min-w-0">
+                <Input
+                  value={baseCustom}
+                  onChange={(event) => setCustomBase(event.target.value)}
+                  onClick={openBaseOptions}
+                  onFocus={(event) => event.currentTarget.select()}
+                  onKeyDown={(event) => {
+                    if (event.key === 'ArrowDown') {
+                      event.preventDefault()
+                      openBaseOptions()
+                    }
+                  }}
+                  placeholder={connected ? 'Choose or type a base branch…' : 'Branch name, e.g. main'}
+                  aria-label="Base branch"
+                  aria-expanded={baseOptionsOpen}
+                  aria-controls="base-branch-options"
+                  className="h-9 min-w-0 font-mono text-xs"
+                />
+              </div>
+            </PopoverAnchor>
+            <PopoverContent
+              align="start"
+              side="bottom"
+              className="w-(--radix-popover-trigger-width) max-w-[calc(100vw-2rem)] gap-0 overflow-hidden p-0"
+              onOpenAutoFocus={(event) => event.preventDefault()}
+              onInteractOutside={(event) => {
+                if (event.target instanceof Node && baseInputWrapper.current?.contains(event.target)) {
+                  event.preventDefault()
+                }
               }}
             >
-              <SelectTrigger id="base-branch" className="w-full font-mono text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={DEFAULT} className="font-mono text-xs">
-                  None
-                </SelectItem>
-                {names.map((name) => (
-                  <SelectItem key={name} value={name} className="font-mono text-xs">
-                    {name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {base === null && (
-              <p className="text-xs text-muted-foreground">Choose a branch to enable automatic issue-branch creation.</p>
-            )}
-            <Input
-              value={baseCustom}
-              onChange={(event) => {
-                const value = event.target.value.trimStart()
-                setBaseCustom(value)
-                const next = value.trim()
-                setBase(next || null)
-              }}
-              placeholder={connected ? 'Or type another branch name…' : 'Branch name, e.g. main'}
-              aria-label="Custom base branch name"
-              className="h-9 min-w-0 font-mono text-xs"
-            />
-          </div>
-
-          <div className="min-w-0 space-y-2">
-            <Label id="branch-issue-label">Preview branch name for an issue</Label>
-            {!issuesEnabled ? (
-              <p className="text-xs text-muted-foreground">Issues are not enabled in this project.</p>
-            ) : issuesError ? (
-              <p role="alert" className="text-xs text-destructive">{issuesError}</p>
-            ) : issuesLoading ? (
-              <p className="text-xs text-muted-foreground">Loading issues…</p>
-            ) : branchableIssues.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No issues are linked to this repository yet.</p>
-            ) : (
               <ul
-                aria-labelledby="branch-issue-label"
-                className="max-h-32 divide-y overflow-y-auto rounded-md bg-muted/20"
+                id="base-branch-options"
+                aria-labelledby="base-branch-label"
+                className="max-h-32 overflow-x-hidden overflow-y-auto p-1"
               >
-                {branchableIssues.map((issue) => {
-                  const selected = issue.id === previewIssueId
-                  return (
-                    <li key={issue.id}>
-                      <button
-                        type="button"
-                        aria-pressed={selected}
-                        title={issue.title}
-                        onClick={() => setPreviewIssueId(selected ? null : issue.id)}
-                        className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
-                      >
-                        <span
-                          className={cn(
-                            'flex size-4 shrink-0 items-center justify-center rounded-sm border',
-                            selected && 'border-brand bg-brand text-brand-foreground',
-                          )}
+                {baseOptions.length === 0 ? (
+                  <li className="px-2 py-2 text-xs text-muted-foreground">No matching branches.</li>
+                ) : (
+                  baseOptions.map((name) => {
+                    const isNone = name === DEFAULT
+                    const selected = isNone ? base === null : base === name
+                    return (
+                      <li key={name}>
+                        <button
+                          type="button"
+                          aria-pressed={selected}
+                          title={isNone ? 'No base branch selected' : name}
+                          onClick={() => chooseBase(name)}
+                          className="flex w-full min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
                         >
-                          {selected && <Check className="size-3" />}
-                        </span>
-                        <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 font-mono text-xs font-semibold">
-                          {issueIdentifier(issueKey, issue.number)}
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                          {issue.title}
-                        </span>
-                      </button>
-                    </li>
-                  )
-                })}
+                          <span
+                            className={cn(
+                              'flex size-4 shrink-0 items-center justify-center rounded-sm border',
+                              selected && 'border-brand bg-brand text-brand-foreground',
+                            )}
+                          >
+                            {selected && <Check className="size-3" />}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate font-mono text-xs">{isNone ? 'None' : name}</span>
+                        </button>
+                      </li>
+                    )
+                  })
+                )}
               </ul>
-            )}
-            {previewIssue && (base === null ? (
-              <p className="text-xs text-muted-foreground">Choose a base branch to preview this issue’s branch name.</p>
-            ) : (
-              <p
-                tabIndex={0}
-                aria-label={`Branch name: ${issueBranchName(issueKey, previewIssue.number, previewIssue.title)}`}
-                className="truncate rounded-md bg-muted/40 px-3 py-2 font-mono text-xs font-semibold"
-                title={issueBranchName(issueKey, previewIssue.number, previewIssue.title)}
-              >
-                {issueIdentifier(issueKey, previewIssue.number)}
-                <span className="ml-2 font-sans font-normal text-muted-foreground">Hover to view branch name</span>
-              </p>
-            ))}
-          </div>
+            </PopoverContent>
+          </Popover>
+          {base === null && (
+            <p className="text-xs text-muted-foreground">Choose a branch to enable automatic issue-branch creation.</p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -237,43 +232,87 @@ export function RepoBranchSettingsDialog({
             Tick the branch your feature PRs merge into (usually <span className="font-mono">dev</span> or{' '}
             <span className="font-mono">main</span>), not only the one you deploy from. Release PRs rarely mention issue IDs.
           </p>
-          {names.length > 0 && (
-            <ul className="max-h-32 divide-y overflow-y-auto rounded-md bg-muted/20">
-              {names.map((name) => {
-                const on = done.includes(name)
-                return (
-                  <li key={name}>
-                    <button
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() => toggle(name)}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
-                    >
-                      <span
-                        className={cn(
-                          'flex size-4 shrink-0 items-center justify-center rounded-sm border',
-                          on && 'border-brand bg-brand text-brand-foreground',
-                        )}
-                      >
-                        {on && <Check className="size-3" />}
-                      </span>
-                      <span className="truncate font-mono text-xs" title={name}>
-                        {name}
-                      </span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
           <form onSubmit={addCustom} className="flex min-w-0 gap-2">
-            <Input
-              value={custom}
-              onChange={(e) => setCustom(e.target.value)}
-              placeholder={connected ? 'Another branch name…' : 'Branch name, e.g. main'}
-              aria-label="Add a done branch"
-              className="h-9 min-w-0 flex-1 font-mono text-xs"
-            />
+            <Popover
+              open={doneOptionsOpen}
+              onOpenChange={(open) => {
+                setDoneOptionsOpen(open)
+                if (open) setBaseOptionsOpen(false)
+              }}
+            >
+              <PopoverAnchor asChild>
+                <div ref={doneInputWrapper} className="min-w-0 flex-1">
+                  <Input
+                    value={custom}
+                    onChange={(event) => setCustom(event.target.value)}
+                    onClick={openDoneOptions}
+                    onKeyDown={(event) => {
+                      if (event.key === 'ArrowDown') {
+                        event.preventDefault()
+                        openDoneOptions()
+                      }
+                    }}
+                    placeholder={connected ? 'Search or add a branch…' : 'Branch name, e.g. main'}
+                    aria-label="Search or add a Done branch"
+                    aria-expanded={doneOptionsOpen}
+                    aria-controls="done-branch-options"
+                    className="h-9 min-w-0 font-mono text-xs"
+                  />
+                </div>
+              </PopoverAnchor>
+              <PopoverContent
+                align="start"
+                side="bottom"
+                className="w-(--radix-popover-trigger-width) max-w-[calc(100vw-2rem)] gap-0 overflow-hidden p-0"
+                onOpenAutoFocus={(event) => event.preventDefault()}
+                onInteractOutside={(event) => {
+                  if (event.target instanceof Node && doneInputWrapper.current?.contains(event.target)) {
+                    event.preventDefault()
+                  }
+                }}
+              >
+                <ul
+                  id="done-branch-options"
+                  aria-label="Branches that mark issues Done"
+                  className="max-h-28 overflow-x-hidden overflow-y-auto p-1"
+                >
+                  {doneOptions.length === 0 ? (
+                    <li className="px-2 py-2 text-xs text-muted-foreground">
+                      {custom.trim() ? 'No matching branches. Use Add to save this branch.' : 'No branches available yet.'}
+                    </li>
+                  ) : (
+                    doneOptions.map((name) => {
+                      const selected = done.includes(name)
+                      return (
+                        <li key={name}>
+                          <button
+                            type="button"
+                            aria-pressed={selected}
+                            disabled={!selected && done.length >= MAX_DONE}
+                            title={name}
+                            onClick={() => {
+                              toggle(name)
+                              setCustom('')
+                            }}
+                            className="flex w-full min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <span
+                              className={cn(
+                                'flex size-4 shrink-0 items-center justify-center rounded-sm border',
+                                selected && 'border-brand bg-brand text-brand-foreground',
+                              )}
+                            >
+                              {selected && <Check className="size-3" />}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate font-mono text-xs">{name}</span>
+                          </button>
+                        </li>
+                      )
+                    })
+                  )}
+                </ul>
+              </PopoverContent>
+            </Popover>
             <Button
               type="submit"
               size="sm"

@@ -404,6 +404,24 @@ type LinkedRepo = {
   repos: { id: string; github_repo_id: number | null; installation_id: number | null } | null
 }
 
+async function clearUsedBaseBranch(
+  admin: SupabaseClient,
+  workspaceId: string,
+  repoId: string,
+  baseBranch: string,
+) {
+  const { error } = await admin
+    .from('workspace_repos')
+    .update({ base_branch: null })
+    .eq('workspace_id', workspaceId)
+    .eq('repo_id', repoId)
+    .eq('base_branch', baseBranch)
+  if (error) {
+    console.error('[github] clearing used base branch failed', error)
+    throw new HttpError(500, 'server_error')
+  }
+}
+
 /** A connected repo's full name and default branch, with a token for it. */
 async function connectedRepo(config: AppConfig, repo: { github_repo_id: number | null; installation_id: number | null } | null) {
   if (!repo?.github_repo_id || !repo.installation_id) throw new HttpError(409, 'repo_not_connected')
@@ -443,7 +461,12 @@ async function createBranch(
     .eq('issue_id', issue.id)
     .eq('repo_id', link.repo_id)
     .maybeSingle()
-  if (existing) return { branch: existing, created: false }
+  if (existing) {
+    if (link.base_branch !== null) {
+      await clearUsedBaseBranch(admin, issue.workspace_id, link.repo_id, link.base_branch)
+    }
+    return { branch: existing, created: false }
+  }
 
   const repo = link.repos
   if (!repo || repo.github_repo_id === null || repo.installation_id === null) throw new HttpError(409, 'repo_not_connected')
@@ -493,6 +516,7 @@ async function createBranch(
   await admin
     .from('issue_activity')
     .insert({ issue_id: issue.id, workspace_id: issue.workspace_id, actor_id: userId, kind: 'branch_created', to_value: name })
+  await clearUsedBaseBranch(admin, issue.workspace_id, link.repo_id, base)
 
   return { branch: { name, base, sha }, created: !adopted }
 }

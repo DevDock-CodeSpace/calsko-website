@@ -134,12 +134,6 @@ export function WorkspaceGitHubPage() {
         <RepoBranchSettingsDialog
           key={settings.id}
           workspaceId={workspace.id}
-          issueKey={workspace.issue_key}
-          issues={issues}
-          issuesEnabled={hasIssues}
-          issuesLoading={issueQuery.isPending}
-          issuesError={issueQuery.isError ? errorMessage(issueQuery.error) : null}
-          repoCount={repos.length}
           repo={settings}
           onOpenChange={(open) => !open && setSettings(null)}
         />

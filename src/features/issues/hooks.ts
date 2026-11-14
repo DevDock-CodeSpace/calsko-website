@@ -70,6 +70,7 @@ export function useCreateIssueBranch() {
         queryClient.invalidateQueries({ queryKey: issueKeys.activity(issue.id) }),
         queryClient.invalidateQueries({ queryKey: issueKeys.detail(workspace.id, issue.number) }),
         queryClient.invalidateQueries({ queryKey: issueKeys.workspace(workspace.id), refetchType: hadRepo ? 'none' : 'active' }),
+        queryClient.invalidateQueries({ queryKey: workspaceReposQuery(workspace.id).queryKey }),
       ])
     },
   })
@@ -194,6 +195,7 @@ export function useUpdateTeamIssue(teamId: string) {
       // It may also have set the issue's repo.
       void queryClient.invalidateQueries({ queryKey: issueKeys.branches(issue.id) })
       void queryClient.invalidateQueries({ queryKey: listKey })
+      void queryClient.invalidateQueries({ queryKey: workspaceReposQuery(issue.workspace.id).queryKey })
     }
   }
 
