@@ -37,6 +37,90 @@ begin
 end;
 $$;
 
+-- Status changes made by the parent rollup are recorded with via = 'rollup'.
+alter table public.issue_activity drop constraint issue_activity_via;
+alter table public.issue_activity add constraint issue_activity_via
+  check (via is null or via in ('github', 'errors', 'rollup'));
+
+-- A parent linked to a connected repo can reach Done through its sub-issues,
+-- even when the person finishing the last sub-issue isn't a workspace manager.
+create or replace function private.check_issue()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.assignee_id is not null
+     and (tg_op = 'INSERT' or new.assignee_id is distinct from old.assignee_id)
+     and not private.has_workspace_access(new.workspace_id, new.assignee_id) then
+    raise exception 'The assignee must be a member of this workspace' using errcode = '23514';
+  end if;
+
+  if new.cycle_id is not null
+     and (tg_op = 'INSERT' or new.cycle_id is distinct from old.cycle_id)
+     and not exists (
+       select 1 from public.issue_cycles c
+       where c.id = new.cycle_id and c.workspace_id = new.workspace_id
+     ) then
+    raise exception 'The cycle must be in the same workspace' using errcode = '23514';
+  end if;
+
+  if new.repo_id is not null
+     and (tg_op = 'INSERT' or new.repo_id is distinct from old.repo_id)
+     and not exists (
+       select 1 from public.workspace_repos r
+       where r.repo_id = new.repo_id and r.workspace_id = new.workspace_id
+     ) then
+    raise exception 'The repository must be linked to this workspace' using errcode = '23514';
+  end if;
+
+  -- In Review / Done on a connected repo: GitHub, the parent rollup or a workspace manager only.
+  if new.status in ('in_review', 'done')
+     and (tg_op = 'INSERT' or new.status is distinct from old.status)
+     and new.repo_id is not null
+     and coalesce(current_setting('devdock.via', true), '') not in ('github', 'rollup')
+     and exists (select 1 from public.repos r where r.id = new.repo_id and r.installation_id is not null)
+     and not private.can_manage_workspace(new.workspace_id) then
+    raise exception 'In Review and Done are set by GitHub for this issue' using errcode = 'DD001';
+  end if;
+
+  if new.parent_id is not null
+     and (tg_op = 'INSERT' or new.parent_id is distinct from old.parent_id) then
+    if new.parent_id = new.id then
+      raise exception 'An issue can''t be its own parent' using errcode = '23514';
+    end if;
+    if not exists (
+      select 1 from public.issues p
+      where p.id = new.parent_id and p.workspace_id = new.workspace_id
+    ) then
+      raise exception 'The parent issue must be in the same workspace' using errcode = '23514';
+    end if;
+    if exists (
+      with recursive up as (
+        select p.id, p.parent_id, 1 as depth from public.issues p where p.id = new.parent_id
+        union all
+        select p.id, p.parent_id, up.depth + 1
+        from public.issues p join up on p.id = up.parent_id
+        where up.depth < 100
+      )
+      select 1 from up where up.id = new.id
+    ) then
+      raise exception 'That would make an issue a sub-issue of itself' using errcode = '23514';
+    end if;
+  end if;
+
+  if new.status in ('done', 'canceled') then
+    if tg_op = 'INSERT' or old.status not in ('done', 'canceled') then
+      new.completed_at := now();
+    end if;
+  else
+    new.completed_at := null;
+  end if;
+  return new;
+end;
+$$;
+
 create function private.issue_children_complete(p_parent_id uuid)
 returns boolean
 language sql
@@ -53,25 +137,7 @@ as $$
     join descendants parent on child.parent_id = parent.id
   )
   select count(*) > 0
-     and coalesce(bool_and(
-       d.status = 'done'
-       and coalesce((
-         select a.via = 'github' and a.to_value = 'done'
-         from public.issue_activity a
-         where a.issue_id = d.id and a.kind = 'status'
-         order by a.id desc
-         limit 1
-       ), false)
-     ), false)
-     and not exists (
-       select 1
-       from descendants leaf
-       where not exists (select 1 from public.issues child where child.parent_id = leaf.id)
-         and not exists (
-           select 1 from public.issue_pull_requests pr
-           where pr.issue_id = leaf.id and pr.state = 'merged'
-         )
-     )
+     and coalesce(bool_and(d.status = 'done'), false)
   from descendants d;
 $$;
 
@@ -84,9 +150,10 @@ as $$
 declare
   parent_status public.issue_status;
   child_count integer;
-  all_children_merged boolean;
+  all_children_done boolean;
   any_child_active boolean;
   next_status public.issue_status;
+  original_via text := current_setting('devdock.via', true);
 begin
   if p_parent_id is null then return; end if;
 
@@ -113,9 +180,9 @@ begin
   -- Deleting the final child does not change the parent's manually chosen status.
   if child_count = 0 then return; end if;
 
-  all_children_merged := private.issue_children_complete(p_parent_id);
+  all_children_done := private.issue_children_complete(p_parent_id);
 
-  if all_children_merged then
+  if all_children_done then
     next_status := 'done';
   elsif any_child_active then
     next_status := 'in_progress';
@@ -127,10 +194,13 @@ begin
 
   if next_status = parent_status then return; end if;
 
-  if next_status = 'done' then
-    perform set_config('devdock.via', 'github', true);
+  if coalesce(current_setting('devdock.via', true), '') <> 'github' then
+    perform set_config('devdock.via', 'rollup', true);
   end if;
   update public.issues set status = next_status where id = p_parent_id;
+  if coalesce(current_setting('devdock.via', true), '') = 'rollup' then
+    perform set_config('devdock.via', coalesce(original_via, ''), true);
+  end if;
 end;
 $$;
 

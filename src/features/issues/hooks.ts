@@ -47,6 +47,16 @@ export function useIssueContext() {
 
 type UpdateVars = { issue: Pick<Issue, 'id' | 'number' | 'parent_id' | 'repo_id'>; patch?: IssuePatch; labelIds?: string[] }
 
+function hierarchyChanged(issue: Pick<Issue, 'parent_id' | 'repo_id'>, patch: IssuePatch | undefined) {
+  return (
+    (patch?.parent_id !== undefined && patch.parent_id !== issue.parent_id) ||
+    (issue.parent_id !== null &&
+      patch?.repo_id !== undefined &&
+      patch.repo_id !== issue.repo_id &&
+      patch.repo_id !== null)
+  )
+}
+
 /**
  * Creates the issue's branch on GitHub (its repo, or the project's only one).
  * Toasts the result; a no-op if the issue already has its branch.
@@ -110,10 +120,7 @@ export function useUpdateIssue() {
         }
       }
       if (labelIds) await setIssueLabels(issue.id, labelIds)
-      const hierarchyChanged =
-        (patch?.parent_id !== undefined && patch.parent_id !== issue.parent_id) ||
-        (patch?.repo_id !== undefined && patch.repo_id !== issue.repo_id && patch.repo_id !== null)
-      if (hierarchyChanged) {
+      if (hierarchyChanged(issue, patch)) {
         void syncIssueHierarchy(issue.id).catch((error) =>
           toast.error(`Saved in Calsko, but GitHub nesting couldn’t be synced: ${errorMessage(error)}`),
         )
@@ -217,10 +224,7 @@ export function useUpdateTeamIssue(teamId: string) {
         done()
         throw error
       }
-      const hierarchyChanged =
-        (patch.parent_id !== undefined && patch.parent_id !== issue.parent_id) ||
-        (patch.repo_id !== undefined && patch.repo_id !== issue.repo_id && patch.repo_id !== null)
-      if (hierarchyChanged) {
+      if (hierarchyChanged(issue, patch)) {
         void syncIssueHierarchy(issue.id).catch((error) =>
           toast.error(`Saved in Calsko, but GitHub nesting couldn’t be synced: ${errorMessage(error)}`),
         )

@@ -643,15 +643,27 @@ async function syncIssueHierarchy(
   issueId: string,
 ) {
   const issue = await readCalskoIssue(asUser, issueId)
-  const repoId = issue.repo_id
-  if (!repoId) throw new HttpError(409, 'no_repo')
 
   let parent: CalskoIssue | null = null
   if (issue.parent_id) {
     parent = await readCalskoIssue(asUser, issue.parent_id)
     if (parent.workspace_id !== issue.workspace_id) throw new HttpError(409, 'repo_mismatch')
-    if (parent.repo_id !== repoId) throw new HttpError(409, 'repo_mismatch')
+    if (parent.repo_id !== issue.repo_id) throw new HttpError(409, 'repo_mismatch')
+  } else {
+    const { data: existing, error } = await admin
+      .from('issue_github_links')
+      .select('issue_id')
+      .eq('issue_id', issue.id)
+      .maybeSingle()
+    if (error) {
+      console.error('[github] reading issue link failed', error)
+      throw new HttpError(500, 'server_error')
+    }
+    if (!existing) return { issue: null, parent: null }
   }
+
+  const repoId = issue.repo_id
+  if (!repoId) return { issue: null, parent: null }
 
   const { data: links, error: linksError } = await asUser
     .from('workspace_repos')
@@ -663,6 +675,7 @@ async function syncIssueHierarchy(
   }
   const repoLink = ((links ?? []) as unknown as IssueRepoLink[]).find((link) => link.repo_id === repoId)
   if (!repoLink?.repos) throw new HttpError(404, 'repo_not_found')
+  if (!repoLink.repos.github_repo_id || !repoLink.repos.installation_id) return { issue: null, parent: null }
 
   const { token, fullName } = await connectedRepo(config, repoLink.repos)
   const childLink = await ensureGitHubIssue(admin, issue, repoId, repoLink.repos, token, fullName)
