@@ -375,7 +375,12 @@ export function CreateIssueDialogForm({
                   </PlanPicker>
                 )}
             {repos.length > 0 && (
-              <RepoPicker value={repoId} repos={repos} onChange={setRepoId}>
+              <RepoPicker
+                value={repoId}
+                repos={repos}
+                onChange={setRepoId}
+                check={{ workspaceId: workspace.id, issueKey: workspace.issue_key, canEdit: canManage }}
+              >
                 <Chip>
                   <GitHubMark className="size-3.5 text-muted-foreground" />
                   {repo ? repo.name : 'Repository'}

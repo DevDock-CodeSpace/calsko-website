@@ -181,7 +181,12 @@ export function IssueProperties({
       {/* Only where repos are linked (a repo_id always is, so this covers it too). */}
       {repos.length > 0 && (
         <Row label="Repo">
-          <RepoPicker value={issue.repo_id} repos={repos} onChange={(repo_id) => update.mutate({ issue, patch: { repo_id } })}>
+          <RepoPicker
+            value={issue.repo_id}
+            repos={repos}
+            onChange={(repo_id) => update.mutate({ issue, patch: { repo_id } })}
+            check={{ workspaceId: workspace.id, issueKey: workspace.issue_key, canEdit: canManage }}
+          >
             <Value muted={!repo}>
               <GitHubMark className="size-4" />
               <span className="truncate">{repo ? repo.name : 'No repository'}</span>

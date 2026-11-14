@@ -19,7 +19,7 @@ export function IssueRow({
   onDelete?: () => void
 }) {
   const { team } = useCurrentTeam()
-  const { workspace, members, labels, cycles, repos, plans, userId } = useIssueContext()
+  const { workspace, members, labels, cycles, repos, plans, userId, canManage } = useIssueContext()
   const update = useUpdateIssue()
 
   return (
@@ -38,6 +38,7 @@ export function IssueRow({
         plans,
         userId,
         update: (patch) => update.mutate({ issue, patch }),
+        baseBranchCheck: { workspaceId: workspace.id, issueKey: workspace.issue_key, canEdit: canManage },
       }}
     >
       <HiddenRowMenus issue={issue} className="absolute top-full right-24" />

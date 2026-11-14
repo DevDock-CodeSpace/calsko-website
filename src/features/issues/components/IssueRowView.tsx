@@ -27,6 +27,7 @@ import { Picker } from './Picker'
 import { PriorityIcon } from './PriorityIcon'
 import { PriorityPicker } from './PriorityPicker'
 import { RepoPicker } from './RepoPicker'
+import type { BaseBranchCheck } from '@/features/repos/components/BaseBranchWarning'
 import { StatusIcon } from './StatusIcon'
 import { StatusPicker } from './StatusPicker'
 
@@ -46,6 +47,8 @@ export type IssueRowSource = {
   project?: string
   /** Called when a menu opens (the group-wide page loads that project's lists then). */
   onMenuOpen?: () => void
+  /** Warns after picking a repo without a base branch (the project's own list). */
+  baseBranchCheck?: BaseBranchCheck
 }
 
 const iconButton =
@@ -208,7 +211,13 @@ export function IssueRowView({
         </CyclePicker>
       )}
       {repo && (
-        <RepoPicker value={issue.repo_id} repos={repos} align="end" onChange={(repo_id) => update({ repo_id })}>
+        <RepoPicker
+          value={issue.repo_id}
+          repos={repos}
+          align="end"
+          onChange={(repo_id) => update({ repo_id })}
+          check={source.baseBranchCheck}
+        >
           <button
             type="button"
             className={cn(chip, 'max-w-32 lg:flex')}
