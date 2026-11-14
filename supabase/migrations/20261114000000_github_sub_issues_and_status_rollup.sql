@@ -53,25 +53,7 @@ as $$
     join descendants parent on child.parent_id = parent.id
   )
   select count(*) > 0
-     and coalesce(bool_and(
-       d.status = 'done'
-       and coalesce((
-         select a.via = 'github' and a.to_value = 'done'
-         from public.issue_activity a
-         where a.issue_id = d.id and a.kind = 'status'
-         order by a.id desc
-         limit 1
-       ), false)
-     ), false)
-     and not exists (
-       select 1
-       from descendants leaf
-       where not exists (select 1 from public.issues child where child.parent_id = leaf.id)
-         and not exists (
-           select 1 from public.issue_pull_requests pr
-           where pr.issue_id = leaf.id and pr.state = 'merged'
-         )
-     )
+     and coalesce(bool_and(d.status = 'done'), false)
   from descendants d;
 $$;
 
@@ -84,9 +66,10 @@ as $$
 declare
   parent_status public.issue_status;
   child_count integer;
-  all_children_merged boolean;
+  all_children_done boolean;
   any_child_active boolean;
   next_status public.issue_status;
+  original_via text := current_setting('devdock.via', true);
 begin
   if p_parent_id is null then return; end if;
 
@@ -113,9 +96,9 @@ begin
   -- Deleting the final child does not change the parent's manually chosen status.
   if child_count = 0 then return; end if;
 
-  all_children_merged := private.issue_children_complete(p_parent_id);
+  all_children_done := private.issue_children_complete(p_parent_id);
 
-  if all_children_merged then
+  if all_children_done then
     next_status := 'done';
   elsif any_child_active then
     next_status := 'in_progress';
@@ -127,10 +110,13 @@ begin
 
   if next_status = parent_status then return; end if;
 
-  if next_status = 'done' then
-    perform set_config('devdock.via', 'github', true);
+  if coalesce(current_setting('devdock.via', true), '') <> 'github' then
+    perform set_config('devdock.via', 'rollup', true);
   end if;
   update public.issues set status = next_status where id = p_parent_id;
+  if coalesce(current_setting('devdock.via', true), '') = 'rollup' then
+    perform set_config('devdock.via', coalesce(original_via, ''), true);
+  end if;
 end;
 $$;
 

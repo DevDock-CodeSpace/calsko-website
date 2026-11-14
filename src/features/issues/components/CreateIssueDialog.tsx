@@ -201,11 +201,12 @@ export function CreateIssueDialogForm({
         description: title.trim(),
         action: { label: 'View', onClick: () => void navigate(issuePath(team.slug, workspace.id, number)) },
       })
-      if (repoId) {
+      const selectedRepo = repos.find((repo) => repo.id === repoId)
+      if (parent && selectedRepo?.github_repo_id && selectedRepo.installation_id) {
         void syncIssueHierarchy(id).catch((error) =>
           toast.error(`Created in Calsko, but GitHub nesting couldn’t be synced: ${errorMessage(error)}`),
         )
-      } else if (parent) {
+      } else if (parent && !repoId && repos.some((repo) => repo.github_repo_id && repo.installation_id)) {
         toast.error('Choose the same repository for the parent and sub-issue to sync their nesting to GitHub.')
       }
       reset()

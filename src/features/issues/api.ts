@@ -80,8 +80,8 @@ export type IssueActivity = {
   from_value: string | null
   to_value: string | null
   actor_id: string | null
-  /** 'github' when the change came from a GitHub webhook, 'errors' from error tracking (no actor). */
-  via: 'github' | 'errors' | null
+  /** Source of an automatic change; rollup is Calsko updating a parent from its descendants. */
+  via: 'github' | 'errors' | 'rollup' | null
   created_at: string
   actor: PersonProfile
 }
@@ -336,9 +336,9 @@ export const issueBranchesQuery = (issueId: string) =>
 export const createIssueBranch = (issueId: string) =>
   callGitHub<{ branch: { name: string; base: string }; created: boolean }>('create_branch', { issueId })
 
-/** Creates/updates the matching GitHub parent/sub-issue relationship for a Calsko issue. */
+/** Creates/updates GitHub issues only as needed to mirror a Calsko sub-issue relationship. */
 export const syncIssueHierarchy = (issueId: string) =>
-  callGitHub<{ issue: { number: number; url: string }; parent: number | null }>('sync_issue_hierarchy', { issueId })
+  callGitHub<{ issue: { number: number; url: string } | null; parent: number | null }>('sync_issue_hierarchy', { issueId })
 
 export const commentsQuery = (issueId: string) =>
   queryOptions({
