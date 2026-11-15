@@ -9,8 +9,8 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useAuth } from '@/features/auth/hooks'
-import { createDiagram, teamDiagramsQuery } from '@/features/diagrams/api'
-import { createDocument, documentQuery, teamDocsQuery, updateDocument, type Doc } from '@/features/docs/api'
+import { createDiagram, deleteDiagram, teamDiagramsQuery } from '@/features/diagrams/api'
+import { createDocument, deleteDocument, documentQuery, teamDocsQuery, updateDocument, type Doc } from '@/features/docs/api'
 import { teamIssuesQuery, type IssueStatus, type TeamIssue } from '@/features/issues/api'
 import { DueDatePicker } from '@/features/issues/components/DueDatePicker'
 import type { CreateIssueDialogProps } from '@/features/issues/components/CreateIssueDialog'
@@ -33,7 +33,7 @@ import { useCurrentTeam } from '@/features/teams/hooks'
 import { diagramPath, docPath, filesPath, hubPlansPath, issuePath } from '@/features/teams/nav'
 import { errorMessage } from '@/lib/errors'
 import { formatShortDate, timeAgo } from '@/lib/format'
-import { ownSave } from '@/lib/realtime'
+import { ownSave, ownWrite } from '@/lib/realtime'
 import { cn } from '@/lib/utils'
 import { useOthersTyping } from '@/hooks/use-others-typing'
 import { preloadable } from '@/lib/preloadable'
@@ -547,11 +547,32 @@ function DateChip({ label, value, canEdit, onChange }: { label: string; value: s
 
 /** The plan's files as the 3D stack: its Brief first (4 lines of it), its Whiteboard, then the rest of its folder. */
 function PlanFiles({ plan }: { plan: PlanDetail }) {
-  const { team } = useCurrentTeam()
+  const { team, can } = useCurrentTeam()
+  const { user } = useAuth()
+  const canDeletePlanFiles = plan.lead_id === user.id || can.isAdmin
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [{ data: docs }, { data: boards }] = useSuspenseQueries({ queries: [teamDocsQuery(team.id), teamDiagramsQuery(team.id)] })
   const openBoard = useOpenPlanWhiteboard(team.id)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; kind: 'doc' | 'diagram'; title: string } | null>(null)
+  const removeFile = useMutation({
+    mutationFn: async (target: NonNullable<typeof deleteTarget>) => {
+      ownWrite(target.kind === 'doc' ? 'documents' : 'diagrams', target.id, 15_000)
+      if (target.kind === 'doc') await deleteDocument(team.id, target.id)
+      else await deleteDiagram(target.id)
+    },
+    onSuccess: (_data, target) => {
+      if (target.kind === 'doc' && target.id === plan.brief_id) clearBriefDraft(target.id)
+      queryClient.removeQueries({ queryKey: [target.kind === 'doc' ? 'documents' : 'diagrams', target.id] })
+      void queryClient.invalidateQueries({ queryKey: ['documents', 'team', team.id] })
+      void queryClient.invalidateQueries({ queryKey: ['diagrams', 'team', team.id] })
+      void queryClient.invalidateQueries({ queryKey: planKeys.detail(plan.id) })
+      void queryClient.invalidateQueries({ queryKey: planKeys.team(team.id) })
+      toast.success(`${target.title} was deleted`)
+      setDeleteTarget(null)
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  })
   const [now] = useState(Date.now)
   const [draftRestore] = useState(() => {
     if (!plan.brief_id) return null
@@ -703,6 +724,9 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
           meta: updated(plan.brief?.updated_at ?? brief?.updated_at ?? plan.updated_at),
           to: docPath(team.slug, plan.brief_id),
           edit: { onClick: editBriefHere },
+          remove: canDeletePlanFiles
+            ? { onClick: () => setDeleteTarget({ id: plan.brief_id!, kind: 'doc', title: brief?.title ?? 'Brief' }) }
+            : undefined,
           ...(editingBrief
             ? {
                 quickEdit: {
@@ -737,10 +761,35 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
             : {}),
         }]
       : []),
-    ...(board ? [{ key: board.id, kind: 'whiteboard' as const, title: board.title, meta: updated(board.updated_at), to: diagramPath(team.slug, board.id) }] : []),
+    ...(board
+      ? [{
+          key: board.id,
+          kind: 'whiteboard' as const,
+          title: board.title,
+          meta: updated(board.updated_at),
+          to: diagramPath(team.slug, board.id),
+          remove: canDeletePlanFiles ? { onClick: () => setDeleteTarget({ id: board.id, kind: 'diagram', title: board.title }) } : undefined,
+        }]
+      : []),
     ...[
-      ...docs.filter((d) => d.folder_id === plan.folder_id && d.id !== plan.brief_id).map((d) => ({ key: d.id, kind: 'doc' as const, title: d.title, meta: updated(d.updated_at), to: docPath(team.slug, d.id), at: d.updated_at })),
-      ...boards.filter((b) => b.folder_id === plan.folder_id && b.id !== plan.whiteboard_id).map((b) => ({ key: b.id, kind: 'whiteboard' as const, title: b.title, meta: updated(b.updated_at), to: diagramPath(team.slug, b.id), at: b.updated_at })),
+      ...docs.filter((d) => d.folder_id === plan.folder_id && d.id !== plan.brief_id).map((d) => ({
+        key: d.id,
+        kind: 'doc' as const,
+        title: d.title,
+        meta: updated(d.updated_at),
+        to: docPath(team.slug, d.id),
+        remove: canDeletePlanFiles ? { onClick: () => setDeleteTarget({ id: d.id, kind: 'doc', title: d.title }) } : undefined,
+        at: d.updated_at,
+      })),
+      ...boards.filter((b) => b.folder_id === plan.folder_id && b.id !== plan.whiteboard_id).map((b) => ({
+        key: b.id,
+        kind: 'whiteboard' as const,
+        title: b.title,
+        meta: updated(b.updated_at),
+        to: diagramPath(team.slug, b.id),
+        remove: canDeletePlanFiles ? { onClick: () => setDeleteTarget({ id: b.id, kind: 'diagram', title: b.title }) } : undefined,
+        at: b.updated_at,
+      })),
     ].sort((a, b) => b.at.localeCompare(a.at)),
   ]
   if (items.length === 0) return null
@@ -777,6 +826,17 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
           </DropdownMenu>
         }
       />
+      {deleteTarget && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => !open && setDeleteTarget(null)}
+          title={`Delete “${deleteTarget.title}”?`}
+          description={`This ${deleteTarget.kind === 'doc' ? 'doc' : 'whiteboard'} is deleted for everyone who can see it. This can’t be undone.`}
+          confirmLabel={`Delete ${deleteTarget.kind === 'doc' ? 'doc' : 'whiteboard'}`}
+          pending={removeFile.isPending}
+          onConfirm={() => removeFile.mutate(deleteTarget)}
+        />
+      )}
     </>
   )
 }
