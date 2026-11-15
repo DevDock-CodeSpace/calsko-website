@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { Plan } from '@/features/plans/api'
 import { issuePath } from '@/features/teams/nav'
 import { workspaceMembersQuery, type WorkspaceMember } from '@/features/workspaces/api'
@@ -22,6 +22,7 @@ export function TeamIssueRow({
   plans,
   update,
   onDelete,
+  subIssuesControl,
 }: {
   issue: TeamIssue
   subIssues?: { done: number; total: number }
@@ -33,6 +34,7 @@ export function TeamIssueRow({
   plans: Plan[]
   update: (issue: TeamIssue, patch: IssuePatch) => void
   onDelete?: () => void
+  subIssuesControl?: ReactNode
 }) {
   const [wanted, setWanted] = useState(false)
   // Disabled until a menu opens; once one row has loaded them, every row of the project reads the cache.
@@ -48,6 +50,7 @@ export function TeamIssueRow({
       issue={issue}
       subIssues={subIssues}
       nest={nest}
+      subIssuesControl={subIssuesControl}
       onDelete={onDelete}
       source={{
         href: issuePath(teamSlug, issue.workspace.id, issue.number),

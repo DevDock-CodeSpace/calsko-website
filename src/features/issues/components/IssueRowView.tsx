@@ -70,6 +70,7 @@ export function IssueRowView({
   issue,
   subIssues,
   nest,
+  subIssuesControl,
   onDelete,
   source,
   children,
@@ -78,6 +79,7 @@ export function IssueRowView({
   subIssues?: { done: number; total: number }
   /** In a nested list: indented by depth, with an arrow that opens its sub-issues. */
   nest?: RowNest
+  subIssuesControl?: ReactNode
   onDelete?: () => void
   source: IssueRowSource
   /** Extra menus anchored in the row (the project list's shortcut-only menus). */
@@ -153,12 +155,14 @@ export function IssueRowView({
         {issue.title}
       </Link>
       {subIssues && subIssues.total > 0 && (
-        <span
-          className="shrink-0 rounded-full border px-1.5 font-mono text-[10px] text-muted-foreground"
-          title={`${subIssues.done} of ${subIssues.total} sub-issues done`}
-        >
-          {subIssues.done}/{subIssues.total}
-        </span>
+        subIssuesControl ?? (
+          <span
+            className="shrink-0 rounded-full border px-1.5 font-mono text-[10px] text-muted-foreground"
+            title={`${subIssues.done} of ${subIssues.total} sub-issues done`}
+          >
+            {subIssues.done}/{subIssues.total}
+          </span>
+        )
       )}
       {baseBranchConfigured && (
         <button
