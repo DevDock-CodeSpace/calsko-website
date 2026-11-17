@@ -18,6 +18,7 @@
     "test:mermaid": "deno test --allow-read tests/mermaid.test.ts",
     "test:emails": "deno test --allow-env supabase/functions/send-emails/templates.test.ts",
     "test:import": "deno test tests/issue-import.test.ts",
+    "test:calendar": "TZ=America/Chicago deno test tests/calendar-plan.test.ts",
     "test:errors": "deno test supabase/functions/_shared/error-tracking/",
     "test:feeds": "deno test supabase/functions/_shared/chat-feeds/",
     "db:types": "supabase gen types typescript --linked --schema public > src/types/database.types.ts",
