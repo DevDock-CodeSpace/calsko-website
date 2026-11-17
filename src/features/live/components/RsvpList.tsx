@@ -12,7 +12,7 @@ const look: Record<RsvpStatus, { label: string; icon: typeof Check; className: s
   declined: { label: 'Not going', icon: X, className: 'text-destructive' },
 }
 
-/** Who replied to the invite, newest answer wins. Mirrored from the organizer's Google event. */
+/** Who replied to the invite, newest answer wins. Mirrored from the organizer's Google or Outlook event. */
 export function RsvpList({ rsvps }: { rsvps: Rsvp[] }) {
   if (rsvps.length === 0) return null
 
@@ -54,7 +54,7 @@ export function RsvpList({ rsvps }: { rsvps: Rsvp[] }) {
         })}
       </ul>
       <p className="text-[11px] text-muted-foreground">
-        From Google Calendar, as of {new Date(latest).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}.
+        From the calendar invite, as of {new Date(latest).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}.
       </p>
     </div>
   )

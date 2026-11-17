@@ -23,7 +23,12 @@ import { workspaceTypes } from '@/features/teams/permissions'
 import { useCollectionView } from '@/features/collections/hooks'
 import { errorMessage } from '@/lib/errors'
 import { createLiveSeries, createLiveSession, updateLiveSession, type LiveSession } from '../api'
-import { useCalendarOps, useCanScheduleLive, useCanWriteLive } from '../hooks'
+import { useCalendarOps, useCanScheduleLive, useCanWriteLive, usePreferredCalendar } from '../hooks'
+import { syncProvider } from '../calendar'
+import { CALENDAR_NAMES } from '@/features/auth/calendar-token'
+import { CalendarChoice } from './CalendarChoice'
+import { useAuth } from '@/features/auth/hooks'
+import type { CalendarOp } from '../calendar'
 import {
   describeSeries,
   generateStarts,
@@ -74,7 +79,7 @@ type ScheduleSessionDialogProps = {
 /**
  * Schedule (or edit) a meeting: title, audience, date, time, length, how often
  * it repeats (new meetings only), notes, and whether to put it in the
- * organizer's Google Calendar with everyone in the audience invited. Only
+ * organizer's Google Calendar or Outlook with everyone in the audience invited. Only
  * offered in scopes where the user may schedule.
  */
 export function ScheduleSessionDialog({
@@ -91,6 +96,12 @@ export function ScheduleSessionDialog({
   const canWrite = useCanWriteLive()
   const canSchedule = useCanScheduleLive()
   const calendarOps = useCalendarOps()
+  const { user } = useAuth()
+  const [preferred, setPreferred] = usePreferredCalendar()
+  // The invite lives in the organizer's calendar: only they can send or change it.
+  const calendarAllowed = !session || session.created_by === user.id
+  // An edit updates the calendar that already holds the invite.
+  const provider = syncProvider(session, preferred)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const editing = session !== undefined
@@ -117,7 +128,7 @@ export function ScheduleSessionDialog({
       duration: session ? durationMinutes(session) : 60,
       scope: scopes[0] ?? GROUP_WIDE,
       // New sessions go to the calendar by default; edits update an existing invite.
-      calendar: session ? session.calendar_event_id !== null : true,
+      calendar: session ? session.calendar_event_id !== null && session.created_by === user.id : true,
     }
   }
   const [innerOpen, setInnerOpen] = useState(false)
@@ -191,9 +202,20 @@ export function ScheduleSessionDialog({
       await queryClient.invalidateQueries({ queryKey: ['live'] })
       if (!form.calendar) return { id, returnTo, calendar: 'skipped' as const }
       try {
-        const op = seriesId
-          ? ({ kind: 'sync_series', seriesId, url } as const)
-          : ({ kind: 'sync', sessionId: id, url } as const)
+        const op: CalendarOp =
+          session?.calendar_event_id && seriesId
+            ? // One meeting of a series changed: only it is updated in the calendar.
+              {
+                kind: 'sync_meeting',
+                sessionId: id,
+                seriesId,
+                url,
+                provider,
+                before: { startsAt: session.starts_at, endsAt: session.ends_at },
+              }
+            : seriesId
+              ? { kind: 'sync_series', seriesId, url, provider }
+              : { kind: 'sync', sessionId: id, url, provider }
         const result = await calendarOps([op], returnTo)
         return { id, returnTo, calendar: result }
       } catch (error) {
@@ -203,7 +225,7 @@ export function ScheduleSessionDialog({
       }
     },
     onSuccess: ({ returnTo, calendar }) => {
-      // Leaving for Google: the queued sync finishes when they come back.
+      // Leaving for Google or Microsoft: the queued sync finishes when they come back.
       if (calendar === 'redirecting') return
       setOpen(false)
       const what = series ? `${starts.length} meetings` : 'Meeting'
@@ -363,32 +385,45 @@ export function ScheduleSessionDialog({
               />
             </div>
 
-            <label className="flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2.5 text-sm">
-              <input
-                type="checkbox"
-                checked={form.calendar}
-                onChange={(e) => set('calendar', e.target.checked)}
-                className="mt-0.5 size-4 accent-brand"
-              />
-              <span className="space-y-0.5">
-                <span className="block font-medium">
-                  {editing && session.calendar_event_id
-                    ? 'Update the Google Calendar invite'
-                    : series
-                      ? 'Add the series to Google Calendar'
-                      : 'Add to Google Calendar'}
-                </span>
-                <span className="block text-xs text-muted-foreground">
-                  Creates the event in your calendar and emails an invite to everyone{' '}
-                  {editing
-                    ? 'the session is for'
-                    : workspaceId || form.scope !== GROUP_WIDE
-                      ? 'in the workspace'
-                      : 'in the group'}
-                  . Google may ask you to allow calendar access.
-                </span>
-              </span>
-            </label>
+            {calendarAllowed && (
+              <div className="flex items-start gap-2.5 rounded-md border px-3 py-2.5 text-sm">
+                <input
+                  id="live-calendar"
+                  type="checkbox"
+                  checked={form.calendar}
+                  onChange={(e) => set('calendar', e.target.checked)}
+                  className="mt-1.5 size-4 accent-brand"
+                />
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label htmlFor="live-calendar" className="cursor-pointer font-medium">
+                      {editing && session.calendar_event_id
+                        ? `Update the ${CALENDAR_NAMES[provider]} invite`
+                        : series
+                          ? 'Invite to calendar, every meeting'
+                          : 'Invite to calendar'}
+                    </label>
+                    {!(editing && session.calendar_event_id) && (
+                      <CalendarChoice value={provider} onChange={setPreferred} disabled={!form.calendar || save.isPending} />
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Creates the event in your {CALENDAR_NAMES[provider]} and emails an invite to everyone{' '}
+                    {editing
+                      ? 'the session is for'
+                      : workspaceId || form.scope !== GROUP_WIDE
+                        ? 'in the workspace'
+                        : 'in the group'}
+                    . {provider === 'outlook' ? 'Microsoft' : 'Google'} may ask you to allow calendar access.
+                  </p>
+                </div>
+              </div>
+            )}
+            {!calendarAllowed && session.calendar_event_id && (
+              <p className="text-xs text-muted-foreground">
+                The calendar invite stays as it is: only the organizer can update it.
+              </p>
+            )}
 
             {save.isError && (
               <p role="alert" className="text-sm text-destructive">

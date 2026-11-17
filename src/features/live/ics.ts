@@ -173,8 +173,34 @@ export function googleCalendarUrl(session: LiveSession, link: string, series: Li
 export const seriesFitsLink = (series: LiveSession[]): boolean =>
   series.length > 1 && inferRecurrence(series.map((s) => new Date(s.starts_at))) !== null
 
-/** Opens Outlook (work/school, outlook.office.com) with the event filled in. */
-export function outlookCalendarUrl(session: LiveSession, link: string): string {
+/**
+ * Outlook on the web: outlook.live.com for personal Microsoft accounts, outlook.office.com for work and school.
+ * Without an Outlook session in the browser, outlook.live.com shows a marketing page instead of signing in;
+ * `nlp=1` ("no landing page") sends the person through Microsoft sign-in instead, which is instant when
+ * they're already signed in to Microsoft.
+ */
+export type OutlookHost = 'live' | 'office'
+
+const OUTLOOK_ORIGIN: Record<OutlookHost, string> = {
+  live: 'https://outlook.live.com',
+  office: 'https://outlook.office.com',
+}
+
+/** Microsoft's tenant for personal accounts (outlook.com, hotmail, or any email signed up as a Microsoft account). */
+const PERSONAL_TENANT = '9188040d-6c67-4c5b-b112-36a304b66dad'
+
+/**
+ * Which Outlook site to open for this person: work/school when they signed in
+ * with a work Microsoft account, otherwise the personal site.
+ */
+export function outlookHost(identities: { provider: string; identity_data?: Record<string, unknown> }[]): OutlookHost {
+  const azure = identities.find((i) => i.provider === 'azure')
+  const claims = azure?.identity_data?.custom_claims as { tid?: unknown } | undefined
+  return typeof claims?.tid === 'string' && claims.tid !== PERSONAL_TENANT ? 'office' : 'live'
+}
+
+/** Opens Outlook with the event filled in (one meeting: the link has no repeat option). */
+export function outlookCalendarUrl(session: LiveSession, link: string, host: OutlookHost): string {
   const params = new URLSearchParams({
     path: '/calendar/action/compose',
     rru: 'addevent',
@@ -184,5 +210,22 @@ export function outlookCalendarUrl(session: LiveSession, link: string): string {
     body: body(session, link),
     location: link,
   })
-  return `https://outlook.office.com/calendar/0/deeplink/compose?${params}`
+  if (host === 'live') params.set('nlp', '1')
+  return `${OUTLOOK_ORIGIN[host]}/calendar/0/deeplink/compose?${params}`
+}
+
+/** The meeting's day in the calendar: "2026/11/16" (local date, no leading zeros). */
+function dayPath(session: LiveSession): string {
+  const d = new Date(session.starts_at)
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
+}
+
+/** Outlook's calendar on the meeting's day, for when the invite is already in it. */
+export function outlookDayUrl(session: LiveSession, host: OutlookHost): string {
+  return `${OUTLOOK_ORIGIN[host]}/calendar/0/view/day/${dayPath(session)}${host === 'live' ? '?nlp=1' : ''}`
+}
+
+/** Google Calendar on the meeting's day, for when the invite is already in it. */
+export function googleDayUrl(session: LiveSession): string {
+  return `https://calendar.google.com/calendar/r/day/${dayPath(session)}`
 }
