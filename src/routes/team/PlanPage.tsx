@@ -724,9 +724,6 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
           meta: updated(plan.brief?.updated_at ?? brief?.updated_at ?? plan.updated_at),
           to: docPath(team.slug, plan.brief_id),
           edit: { onClick: editBriefHere },
-          remove: canDeletePlanFiles
-            ? { onClick: () => setDeleteTarget({ id: plan.brief_id!, kind: 'doc', title: brief?.title ?? 'Brief' }) }
-            : undefined,
           ...(editingBrief
             ? {
                 quickEdit: {
