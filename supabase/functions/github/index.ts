@@ -484,7 +484,17 @@ async function createBranch(
     .eq('issue_id', issue.id)
     .eq('repo_id', link.repo_id)
     .maybeSingle()
-  if (existing) return { branch: existing, created: false }
+  if (existing) {
+    // A base branch is a one-time choice for the next issue branch. Clear it
+    // even on retries where the GitHub branch already exists.
+    const { error } = await admin
+      .from('workspace_repos')
+      .update({ base_branch: null })
+      .eq('workspace_id', issue.workspace_id)
+      .eq('repo_id', link.repo_id)
+    if (error) throw new HttpError(500, 'server_error')
+    return { branch: existing, created: false }
+  }
 
   const repo = link.repos
   if (!repo || repo.github_repo_id === null || repo.installation_id === null) throw new HttpError(409, 'repo_not_connected')
@@ -527,6 +537,17 @@ async function createBranch(
   )
   if (saveError) {
     console.error('[github] saving branch failed', saveError)
+    throw new HttpError(500, 'server_error')
+  }
+  // Require the user to choose a base again before creating another issue
+  // branch. The saved issue branch retains the base used for this branch.
+  const { error: clearBaseError } = await admin
+    .from('workspace_repos')
+    .update({ base_branch: null })
+    .eq('workspace_id', issue.workspace_id)
+    .eq('repo_id', link.repo_id)
+  if (clearBaseError) {
+    console.error('[github] clearing issue branch base failed', clearBaseError)
     throw new HttpError(500, 'server_error')
   }
   // The project's only repo becomes the issue's repo (logged as the caller's change).
