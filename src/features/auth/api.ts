@@ -7,7 +7,7 @@ import { saveMyTimeZone } from '@/features/email/api'
 import { supabase, supabasePublishableKey, supabaseUrl } from '@/lib/supabase'
 import type { Tables } from '@/types/database.types'
 import { AuthFlowError } from './errors'
-import { CALENDAR_SCOPE, clearCalendarToken, markCalendarConnecting } from './google-calendar'
+import { CALENDAR_SCOPES, clearCalendarToken, markCalendarConnecting, type CalendarProvider } from './calendar-token'
 import { rememberNextPath } from './redirect'
 import { logError } from '@/lib/error-tracking'
 
@@ -148,25 +148,31 @@ export async function signInWithProvider(provider: SignInProvider, next: string,
 }
 
 /**
- * Signs in with Google again, this time also asking for Google Calendar
- * (calendar.events), and comes back to `next`. The callback keeps the Google
- * token for this tab (captureCalendarToken). Google shows the consent screen
- * the first time only; `email` pre-selects the signed-in account.
+ * Signs in with Google or Microsoft again, this time also asking for calendar
+ * access (Google calendar.events, Microsoft Calendars.ReadWrite), and comes
+ * back to `next`. The callback keeps the token for this tab
+ * (captureCalendarToken). The consent screen shows the first time only;
+ * `email` pre-selects the signed-in account.
  */
-export async function connectGoogleCalendar(next: string, email: string | undefined): Promise<void> {
+export async function connectCalendar(provider: CalendarProvider, next: string, email: string | undefined): Promise<void> {
   rememberNextPath(next)
-  markCalendarConnecting()
+  markCalendarConnecting(provider)
   const { error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
+    provider: provider === 'outlook' ? 'azure' : 'google',
     options: {
       redirectTo: `${window.location.origin}${AUTH_CALLBACK_PATH}`,
-      scopes: CALENDAR_SCOPE,
-      queryParams: { include_granted_scopes: 'true', ...(email ? { login_hint: email } : {}) },
+      scopes: CALENDAR_SCOPES[provider],
+      queryParams:
+        provider === 'google'
+          ? { include_granted_scopes: 'true', ...(email ? { login_hint: email } : {}) }
+          : email
+            ? { login_hint: email }
+            : undefined,
     },
   })
   if (error) {
-    clearCalendarToken()
-    logError('[auth] connectGoogleCalendar failed', error)
+    clearCalendarToken(provider)
+    logError('[auth] connectCalendar failed', error)
     throw new AuthFlowError('oauth', { cause: error })
   }
 }

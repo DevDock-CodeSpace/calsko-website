@@ -8,6 +8,7 @@ import { myWorkspaceRolesQuery, teamCollectionsQuery, teamWorkspacesQuery } from
 import { errorMessage } from '@/lib/errors'
 import { liveSessionQuery, seriesSessionsQuery, type LiveSession } from './api'
 import { flushCalendarQueue, refreshRsvps, runCalendarOps, type CalendarOp } from './calendar'
+import { defaultCalendar, type CalendarProvider } from '@/features/auth/calendar-token'
 import { logError } from '@/lib/error-tracking'
 
 /**
@@ -58,7 +59,13 @@ function useLoadFresh() {
   return (sessionId: string) => queryClient.fetchQuery({ ...liveSessionQuery(sessionId), staleTime: 0 })
 }
 
-/** Runs calendar changes now, or after a trip to Google when there's no token. */
+/** Which calendar new invites go to: Google or Outlook, after the account they signed in with. */
+export function usePreferredCalendar() {
+  const { user } = useAuth()
+  return useState<CalendarProvider>(() => defaultCalendar(user.identities ?? []))
+}
+
+/** Runs calendar changes now, or after a trip to Google or Microsoft when there's no token. */
 export function useCalendarOps() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -70,7 +77,7 @@ export function useCalendarOps() {
   }
 }
 
-/** On Meetings pages: finish calendar changes queued before a trip to Google. */
+/** On Meetings pages: finish calendar changes queued before a trip to Google or Microsoft. */
 export function useCalendarQueue() {
   const queryClient = useQueryClient()
   const load = useLoadFresh()
@@ -82,7 +89,7 @@ export function useCalendarQueue() {
       async (count) => {
         if (count === null) return
         await queryClient.invalidateQueries({ queryKey: ['live'] })
-        toast.success('Google Calendar updated. Invites were sent.')
+        toast.success('Calendar updated. Invites were sent.')
       },
       (error: unknown) => toast.error(errorMessage(error)),
     )
@@ -97,7 +104,7 @@ export function useSeriesSessions(seriesId: string | null) {
 }
 
 /**
- * Pulls the invite replies from Google once when an organizer opens a meeting
+ * Pulls the invite replies from Google or Outlook once when an organizer opens a meeting
  * they can edit and has a live calendar token. Never for readers, never on a
  * timer: the figures refresh when the organizer next looks at the page.
  */

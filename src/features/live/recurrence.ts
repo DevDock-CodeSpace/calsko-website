@@ -157,13 +157,14 @@ export function toRdate(starts: Date[], timeZone: string): string | null {
 
 const DAY_CODES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
 
+/** A regular repeat: every day, or every week on these weekdays (0 = Sunday), `count` times. */
+export type RepeatPattern = { freq: 'daily' } | { freq: 'weekly'; days: number[] }
+
 /**
- * An RRULE describing these start times, or null when they don't form a regular
- * pattern (hand-picked dates, or an occurrence whose time was edited). Used to
- * hand a whole series to Google Calendar in one link, since a calendar URL can
- * carry a rule but not a list of dates.
+ * The pattern these start times follow, or null when they don't form a regular
+ * one (hand-picked dates, or an occurrence whose time was edited).
  */
-export function inferRecurrence(starts: Date[]): string | null {
+export function inferPattern(starts: Date[]): RepeatPattern | null {
   if (starts.length < 2) return null
   // One rule can only describe occurrences at the same time of day.
   const [first] = starts
@@ -171,12 +172,11 @@ export function inferRecurrence(starts: Date[]): string | null {
 
   const last = starts[starts.length - 1]
   const dayOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-  const count = starts.length
 
   // Consecutive days are a daily rule, whatever weekdays they happen to land on.
   const DAY_MS = 24 * 60 * 60_000
   const consecutive = starts.every((d, i) => i === 0 || dayOf(d) - dayOf(starts[i - 1]) === DAY_MS)
-  if (consecutive) return `RRULE:FREQ=DAILY;COUNT=${count}`
+  if (consecutive) return { freq: 'daily' }
 
   const weekdays = [...new Set(starts.map((d) => d.getDay()))].sort((a, b) => a - b)
 
@@ -192,5 +192,18 @@ export function inferRecurrence(starts: Date[]): string | null {
   const actual = starts.map(dayOf)
   if (expected.length !== actual.length || expected.some((time, i) => time !== actual[i])) return null
 
-  return `RRULE:FREQ=WEEKLY;BYDAY=${weekdays.map((d) => DAY_CODES[d]).join(',')};COUNT=${count}`
+  return { freq: 'weekly', days: weekdays }
+}
+
+/**
+ * An RRULE describing these start times, or null when they have no regular
+ * pattern. Used to hand a whole series to Google Calendar in one link, since a
+ * calendar URL can carry a rule but not a list of dates.
+ */
+export function inferRecurrence(starts: Date[]): string | null {
+  const pattern = inferPattern(starts)
+  if (!pattern) return null
+  const count = starts.length
+  if (pattern.freq === 'daily') return `RRULE:FREQ=DAILY;COUNT=${count}`
+  return `RRULE:FREQ=WEEKLY;BYDAY=${pattern.days.map((d) => DAY_CODES[d]).join(',')};COUNT=${count}`
 }
