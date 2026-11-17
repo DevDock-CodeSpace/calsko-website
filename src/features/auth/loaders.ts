@@ -5,7 +5,7 @@ import { activityExpired, startActivityClock, wasIdleSignOut } from '@/lib/inact
 import { EXPIRED_REASON, INACTIVE_REASON, INACTIVITY_LIMIT_MS } from '@/lib/inactivity-config'
 import { saveMyTimeZone } from '@/features/email/api'
 import { getCurrentSession, signOutForInactivity, signOutForSessionLimit } from './api'
-import { captureCalendarToken, clearCalendarToken } from './google-calendar'
+import { captureCalendarToken, clearCalendarToken } from './calendar-token'
 import { isLoginErrorCode, type LoginErrorCode } from './errors'
 import { DEFAULT_AFTER_LOGIN, nextForUser, safeNextPath, takeNextPath } from './redirect'
 
