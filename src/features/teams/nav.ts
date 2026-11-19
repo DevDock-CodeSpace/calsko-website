@@ -60,6 +60,15 @@ export const diagramPath = (teamSlug: string, diagramId: string, workspaceId?: s
 
 /** Issues are workspace-only (no team-wide view). */
 export const issuesPath = (teamSlug: string, workspaceId: string) => `${workspacePath(teamSlug, workspaceId)}/issues`
+/** Projects open on Issues by default; workspaces without that tool keep their Overview landing page. */
+export function workspaceDefaultPath(
+  teamSlug: string,
+  workspace: { id: string; type: WorkspaceType; modules: readonly WorkspaceModule[] },
+) {
+  return workspace.type === 'project' && workspace.modules.includes('issues')
+    ? issuesPath(teamSlug, workspace.id)
+    : workspacePath(teamSlug, workspace.id)
+}
 /** A workspace's cycles, and one cycle by its number. */
 export const cyclesPath = (teamSlug: string, workspaceId: string) => `${issuesPath(teamSlug, workspaceId)}/cycles`
 export const cyclePath = (teamSlug: string, workspaceId: string, number: number) =>

@@ -7,7 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuAction, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
 import { teamMembersQuery } from '@/features/teams/api'
 import { useCurrentTeam } from '@/features/teams/hooks'
-import { cyclePath, cyclesPath, issuePath, issuesPath, planPath, teamIssuesPath, workspacePath } from '@/features/teams/nav'
+import { cyclePath, cyclesPath, issuePath, issuesPath, planPath, teamIssuesPath, workspaceDefaultPath } from '@/features/teams/nav'
 import { workspaceTypes } from '@/features/teams/permissions'
 import { teamPlansQuery } from '@/features/plans/api'
 import { PlanStatusDot } from '@/features/plans/components/PlanStatusDot'
@@ -64,7 +64,7 @@ export function PinnedNav({ onNavigate }: { onNavigate: () => void }) {
     const workspace = workspaces.find((item) => item.id === pin.workspace_id)
     if (!workspace) return []
     if (pin.kind === 'workspace') {
-      const to = workspacePath(team.slug, workspace.id)
+      const to = workspaceDefaultPath(team.slug, workspace)
       const Icon = workspaceTypes[workspace.type].icon
       return [{ pin, label: workspace.title, where: '', to, icon: <Icon />, active: matchPath({ path: to, end: false }, pathname) !== null }]
     }

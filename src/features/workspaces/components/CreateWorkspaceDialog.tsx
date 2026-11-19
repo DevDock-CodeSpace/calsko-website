@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useCurrentTeam } from '@/features/teams/hooks'
-import { defaultModules, workspacePath } from '@/features/teams/nav'
+import { defaultModules, workspaceDefaultPath } from '@/features/teams/nav'
 import { allowedWorkspaceTypes, defaultWorkspaceType, workspaceTypes } from '@/features/teams/permissions'
 import { useCollectionView } from '@/features/collections/hooks'
 import { CollectionSelect } from '@/features/collections/components/CollectionSelect'
@@ -74,7 +74,8 @@ export function CreateWorkspaceDialog({ trigger, listen = false }: { trigger?: R
     onSuccess: async ({ id }) => {
       await queryClient.invalidateQueries({ queryKey: ['workspaces'] })
       setOpen(false)
-      navigate(createdPath ? createdPath(id) : workspacePath(team.slug, id))
+      const enabledTools = requiredModule && !modules.includes(requiredModule) ? [...modules, requiredModule] : modules
+      navigate(createdPath ? createdPath(id) : workspaceDefaultPath(team.slug, { id, type, modules: enabledTools }))
     },
   })
 
