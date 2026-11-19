@@ -127,7 +127,7 @@ function Rows({
               </span>
               <StatusLabel status={status} startsAt={session.starts_at} now={now} />
               {session.calendar_event_id ? (
-                <CalendarCheck className="hidden size-4 shrink-0 text-muted-foreground sm:block" aria-label="In Google Calendar" />
+                <CalendarCheck className="hidden size-4 shrink-0 text-muted-foreground sm:block" aria-label="Invites sent" />
               ) : (
                 <span className="hidden size-4 shrink-0 sm:block" />
               )}

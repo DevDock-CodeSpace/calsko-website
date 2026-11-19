@@ -16,9 +16,24 @@ import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { deleteLiveSeriesFrom, deleteLiveSession, fetchJaasToken, type LiveSession, type Rsvp } from '../api'
 import { useLiveCall } from '../call/context'
-import { buildIcs, downloadIcs, googleCalendarUrl, icsFileName, outlookCalendarUrl, seriesFitsLink } from '../ics'
+import {
+  buildIcs,
+  downloadIcs,
+  googleCalendarUrl,
+  googleDayUrl,
+  icsFileName,
+  outlookCalendarUrl,
+  outlookDayUrl,
+  outlookHost,
+  seriesFitsLink,
+} from '../ics'
+import { cancelOps, syncProvider } from '../calendar'
+import { eventProvider } from '../calendar-plan'
+import { useAuth } from '@/features/auth/hooks'
+import { CALENDAR_NAMES } from '@/features/auth/calendar-token'
+import { CalendarChoice } from './CalendarChoice'
 import { useRefreshRsvps, useSeriesSessions } from '../hooks'
-import { useCalendarOps, useCalendarQueue, useCanWriteLive, useNow } from '../hooks'
+import { useCalendarOps, useCalendarQueue, useCanWriteLive, useNow, usePreferredCalendar } from '../hooks'
 import { canJoin, durationMinutes, EARLY_JOIN_MS, formatDay, formatDuration, formatTime, formatTimeRange, sessionStatus } from '../time'
 import { RsvpList } from './RsvpList'
 import { ScheduleSessionDialog } from './ScheduleSessionDialog'
@@ -46,20 +61,36 @@ export function LiveSessionView({ session, workspaceId }: LiveSessionViewProps) 
   const rsvps = session.rsvps ?? []
   const laterInSeries = series.filter((s) => Date.parse(s.starts_at) > Date.parse(session.starts_at)).length
   const wholeSeries = series.length > 1
+  const [preferred, setPreferred] = usePreferredCalendar()
+  // The calendar already holding the invite, else the organizer's pick.
+  const provider = syncProvider(session, preferred)
+  const calendarName = CALENDAR_NAMES[provider]
+  const { user } = useAuth()
+  const eventUrl = `${window.location.origin}${liveSessionPath(team.slug, session.id, session.workspace_id ?? undefined)}`
+  const outlookSite = outlookHost(user.identities ?? [])
+  // When the invite went out from a calendar, that calendar's button opens it on the meeting's day:
+  // everyone invited already has the meeting there, and the add-event form would make a second copy.
+  const sentFrom = session.calendar_event_id ? eventProvider(session.calendar_event_id) : null
+  const googleHref = sentFrom === 'google' ? googleDayUrl(session) : googleCalendarUrl(session, eventUrl, series)
+  const outlookHref =
+    sentFrom === 'outlook' ? outlookDayUrl(session, outlookSite) : outlookCalendarUrl(session, eventUrl, outlookSite)
   // A Google link carries a repeat rule; Outlook's cannot, and irregular dates have no rule.
-  const addHint = !wholeSeries
-    ? 'Opens your calendar with the meeting filled in.'
-    : seriesFitsLink(series)
-      ? `Google adds all ${series.length} meetings. Outlook adds this one.`
-      : `These dates don’t follow a pattern, so the links add this meeting only. The .ics file has all ${series.length}.`
+  const addHint = sentFrom
+    ? `The invite is already in ${calendarName}; its button opens the meeting's day.`
+    : !wholeSeries
+      ? 'Opens your calendar with the meeting filled in.'
+      : seriesFitsLink(series)
+        ? `Google adds all ${series.length} meetings. Outlook adds this one; the .ics file has all ${series.length}.`
+        : `These dates don’t follow a pattern, so the links add this meeting only. The .ics file has all ${series.length}.`
 
-  useRefreshRsvps(session, canWrite)
+  // The invite lives in the organizer's calendar: only their sign-in can send, change or cancel it.
+  const isOrganizer = session.created_by === user.id
+  useRefreshRsvps(session, isOrganizer)
 
   const status = sessionStatus(session, now)
   const joinable = canJoin(session, now, canWrite)
   const active = call?.sessionId === session.id
   const listPath = livePath(team.slug, workspaceId)
-  const eventUrl = `${window.location.origin}${liveSessionPath(team.slug, session.id, session.workspace_id ?? undefined)}`
 
   const join = useMutation({
     mutationFn: () => fetchJaasToken(session.id),
@@ -80,13 +111,13 @@ export function LiveSessionView({ session, workspaceId }: LiveSessionViewProps) 
       calendarOps(
         [
           session.series_id
-            ? { kind: 'sync_series', seriesId: session.series_id, url: eventUrl }
-            : { kind: 'sync', sessionId: session.id, url: eventUrl },
+            ? { kind: 'sync_series', seriesId: session.series_id, url: eventUrl, provider }
+            : { kind: 'sync', sessionId: session.id, url: eventUrl, provider },
         ],
         liveSessionPath(team.slug, session.id, workspaceId),
       ),
     onSuccess: (result) => {
-      if (result === 'done') toast.success('Google Calendar updated. Invites were sent.')
+      if (result === 'done') toast.success(`${calendarName} updated. Invites were sent.`)
     },
     onError: (error) => toast.error(errorMessage(error)),
   })
@@ -100,15 +131,11 @@ export function LiveSessionView({ session, workspaceId }: LiveSessionViewProps) 
       // Leave first so this page doesn't render a deleted session.
       await navigate(listPath, { replace: true })
       await queryClient.invalidateQueries({ queryKey: ['live'] })
-      const eventId = session.calendar_event_id
-      if (!eventId) return
-      // The series' one Google event: gone when nothing earlier is left, else re-synced
-      // so it only lists what remains. Cancelling a single meeting leaves the event alone.
-      const keepsEarlier = series.some((s) => Date.parse(s.starts_at) < Date.parse(session.starts_at))
+      // Cancel the events that are gone, or re-sync the series' event so it only lists what remains.
+      const ops = isOrganizer ? cancelOps(session, series, wholeSeries, eventUrl) : []
+      if (ops.length === 0) return
       try {
-        if (!seriesId) await calendarOps([{ kind: 'delete', eventId }], listPath)
-        else if (wholeSeries && !keepsEarlier) await calendarOps([{ kind: 'delete', eventId }], listPath)
-        else if (wholeSeries) await calendarOps([{ kind: 'sync_series', seriesId, url: eventUrl }], listPath)
+        await calendarOps(ops, listPath)
       } catch (error) {
         toast.error(`Meeting cancelled, but the calendar event wasn’t updated. ${errorMessage(error)}`)
       }
@@ -228,12 +255,12 @@ export function LiveSessionView({ session, workspaceId }: LiveSessionViewProps) 
             <div className="flex flex-wrap items-center gap-2">
               {/* Plain links: they open the calendar with the meeting filled in, no account connection. */}
               <Button asChild variant="outline" size="xs">
-                <a href={googleCalendarUrl(session, eventUrl, series)} target="_blank" rel="noreferrer">
+                <a href={googleHref} target="_blank" rel="noreferrer">
                   <CalendarDown /> Google
                 </a>
               </Button>
               <Button asChild variant="outline" size="xs">
-                <a href={outlookCalendarUrl(session, eventUrl)} target="_blank" rel="noreferrer">
+                <a href={outlookHref} target="_blank" rel="noreferrer">
                   <CalendarDown /> Outlook
                 </a>
               </Button>
@@ -257,13 +284,16 @@ export function LiveSessionView({ session, workspaceId }: LiveSessionViewProps) 
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               {session.calendar_event_id ? (
                 <span className="flex items-center gap-1.5">
-                  <CalendarCheck className="size-4 text-muted-foreground" /> Invites sent
+                  <CalendarCheck className="size-4 text-muted-foreground" /> Invites sent from {calendarName}
                 </span>
               ) : (
                 <span className="text-muted-foreground">Nobody invited yet</span>
               )}
-              {canWrite && status !== 'ended' && (
+              {canWrite && isOrganizer && status !== 'ended' && (
                 <span className="flex items-center gap-1">
+                  {!session.calendar_event_id && (
+                    <CalendarChoice value={provider} onChange={setPreferred} disabled={syncCalendar.isPending} />
+                  )}
                   <Button
                     variant="outline"
                     size="xs"
@@ -285,8 +315,8 @@ export function LiveSessionView({ session, workspaceId }: LiveSessionViewProps) 
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs">
                       {session.calendar_event_id
-                        ? 'Updates the event in your Google Calendar and emails everyone this meeting is for again, so they see the change.'
-                        : 'Creates the event in your Google Calendar and emails an invite to everyone this meeting is for. They don’t need a Calsko or Google account to receive it.'}
+                        ? `Updates the event in your ${calendarName} and emails everyone this meeting is for again, so they see the change.`
+                        : `Creates the event in your ${calendarName} and emails an invite to everyone this meeting is for. They don’t need a Calsko, Google or Microsoft account to receive it.`}
                     </TooltipContent>
                   </Tooltip>
                 </span>
@@ -294,6 +324,11 @@ export function LiveSessionView({ session, workspaceId }: LiveSessionViewProps) 
             </div>
             {!canWrite && rsvps.length === 0 && (
               <p className="text-xs text-muted-foreground">Leads and group admins send invites.</p>
+            )}
+            {canWrite && !isOrganizer && status !== 'ended' && (
+              <p className="text-xs text-muted-foreground">
+                Only the organizer can send or update invites, from their own calendar.
+              </p>
             )}
             <RsvpList rsvps={rsvps} />
           </div>
@@ -310,11 +345,13 @@ export function LiveSessionView({ session, workspaceId }: LiveSessionViewProps) 
         onOpenChange={setConfirmCancel}
         title={`Cancel ${session.title}?`}
         description={
-          session.series_id
-            ? 'This meeting is deleted. It can’t be undone.'
-            : session.calendar_event_id
-              ? 'The meeting is deleted and the Google Calendar event is cancelled for everyone invited.'
-              : 'The meeting is deleted. This can’t be undone.'
+          session.calendar_event_id && !isOrganizer
+            ? `The meeting is deleted here. Its ${calendarName} invite stays in people’s calendars: only the organizer can cancel it.`
+            : session.series_id
+              ? 'This meeting is deleted. It can’t be undone.'
+              : session.calendar_event_id
+                ? `The meeting is deleted and the ${calendarName} event is cancelled for everyone invited.`
+                : 'The meeting is deleted. This can’t be undone.'
         }
         confirmLabel={cancelRest && laterInSeries > 0 ? `Cancel ${laterInSeries + 1} meetings` : 'Cancel meeting'}
         pending={cancel.isPending}

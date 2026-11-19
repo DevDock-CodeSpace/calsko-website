@@ -32,9 +32,10 @@ Rule of thumb: a new **project** is for different people, code or sprints; a new
 ## Plan files
 
 Files has a group-wide **Plans** folder with one folder per plan, named and renamed with it. A plan starts with a **Brief** doc
-(its description) and a **Whiteboard**. Everyone in the group edits them; the assigned plan lead and group owners/admins can delete
-docs and whiteboards in that plan's folder. Plan folders can't be renamed, moved or deleted by hand. Deleting a plan deletes its
-folder and everything in it, after a warning; its issues stay, without a plan.
+(its description) and a **Whiteboard**. Everyone in the group edits the Brief; the Plan's lead and creator, group owners/admins,
+and Developers of workspaces with issues in the Plan can edit its Whiteboard. Developers can't delete the Whiteboard or Plan.
+Plan folders can't be renamed, moved or deleted by hand.
+Deleting a plan deletes its folder and everything in it, after a warning; its issues stay, without a plan.
 
 ## Design
 

@@ -7,7 +7,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { PersonAvatar } from '@/components/PersonRow'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useAuth } from '@/features/auth/hooks'
 import { createDiagram, deleteDiagram, teamDiagramsQuery } from '@/features/diagrams/api'
 import { createDocument, deleteDocument, documentQuery, teamDocsQuery, updateDocument, type Doc } from '@/features/docs/api'
@@ -20,6 +20,7 @@ import { TeamIssueRow } from '@/features/issues/components/TeamIssueRow'
 import { useHubProjects } from '@/features/issues/hub/hooks'
 import { useUpdateTeamIssue } from '@/features/issues/hooks'
 import { compareIssues, isClosed, issueIdentifier, statusLabel } from '@/features/issues/meta'
+import { subIssueStats } from '@/features/issues/sub-issues'
 import { planFiles, planKeys, planQuery, teamPlansQuery, type Plan, type PlanDetail, type PlanStatus } from '@/features/plans/api'
 import { FileStack, NewFileButton, type StackItem } from '@/features/plans/components/FileStack'
 import { PlanProjectPickerDialog } from '@/features/plans/components/PlanProjectPickerDialog'
@@ -121,9 +122,10 @@ const BAR: [IssueStatus, string][] = [
  * (the Brief, the Whiteboard and whatever else is in its folder in Files), the issues nobody has taken
  * yet (Up for grabs, with Assign to me), its issues by person, and a details panel on the right
  * (progress, status, lead, dates, people, projects) that closes with ✕; it starts open and the choice
- * isn't remembered. Its lead, its creator and group owners/admins edit and delete it; everyone in the
- * group edits its files. The Brief's full text loads only when its inline editor is opened; the page
- * otherwise uses the hub's cached lists and `planLoader` data.
+ * isn't remembered. Its lead, its creator and group owners/admins edit and delete it. The Brief is
+ * group-editable; its linked Whiteboard is editable by those same Plan roles. The Brief's full text
+ * loads only when its inline editor is opened; the page otherwise uses the hub's cached lists and
+ * `planLoader` data.
  */
 export function PlanPage() {
   const { planId = '' } = useParams()
@@ -187,6 +189,12 @@ function PlanDetails({ plan, issues, people, plans, canEdit }: { plan: PlanDetai
   const showProject = projects.length > 1
   const byPerson = new Map<string, TeamIssue[]>()
   for (const issue of issues) if (issue.assignee_id) byPerson.set(issue.assignee_id, [...(byPerson.get(issue.assignee_id) ?? []), issue])
+  const childrenByParent = new Map<string, TeamIssue[]>()
+  for (const issue of issues) {
+    if (issue.parent_id) childrenByParent.set(issue.parent_id, [...(childrenByParent.get(issue.parent_id) ?? []), issue])
+  }
+  for (const children of childrenByParent.values()) children.sort(compareIssues)
+  const subIssues = subIssueStats(issues)
 
   const [panelOpen, setPanelOpen] = useState(true)
   const subtitle = [
@@ -272,6 +280,11 @@ function PlanDetails({ plan, issues, people, plans, canEdit }: { plan: PlanDetai
                   <Link to={issuePath(team.slug, issue.workspace.id, issue.number)} className="min-w-0 flex-1 truncate text-sm hover:underline">
                     {issue.title}
                   </Link>
+                  <PlanSubIssuesDropdown
+                    issue={issue}
+                    subIssues={childrenByParent.get(issue.id) ?? []}
+                    progress={subIssues.get(issue.id)}
+                  />
                   {showProject && <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">{issue.workspace.title}</span>}
                   {canTake(issue) && (
                     <Button
@@ -322,11 +335,19 @@ function PlanDetails({ plan, issues, people, plans, canEdit }: { plan: PlanDetai
                         <TeamIssueRow
                           key={issue.id}
                           issue={issue}
+                          subIssues={subIssues.get(issue.id)}
                           teamSlug={team.slug}
                           userId={user.id}
                           showProject={showProject}
                           plans={plans}
                           update={(i, patch) => updateIssue.mutate({ issue: i, patch })}
+                          subIssuesControl={
+                            <PlanSubIssuesDropdown
+                              issue={issue}
+                              subIssues={childrenByParent.get(issue.id) ?? []}
+                              progress={subIssues.get(issue.id)}
+                            />
+                          }
                         />
                       ))}
                     </div>
@@ -381,6 +402,44 @@ function PlanDetails({ plan, issues, people, plans, canEdit }: { plan: PlanDetai
         </Suspense>
       )}
     </div>
+  )
+}
+
+function PlanSubIssuesDropdown({
+  issue,
+  subIssues,
+  progress,
+}: {
+  issue: TeamIssue
+  subIssues: TeamIssue[]
+  progress: { done: number; total: number } | undefined
+}) {
+  if (subIssues.length === 0 || !progress) return null
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Show sub-issues for ${issueIdentifier(issue.workspace.issue_key, issue.number)}`}
+          title="Show sub-issues"
+          className="relative z-10 shrink-0 rounded-full border px-1.5 font-mono text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          {progress.done}/{progress.total}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-80">
+        <DropdownMenuLabel>Sub-issues</DropdownMenuLabel>
+        {subIssues.map((child) => (
+          <DropdownMenuItem key={child.id} onSelect={(event) => event.preventDefault()}>
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">
+              {issueIdentifier(child.workspace.issue_key, child.number)}
+            </span>
+            <span className="min-w-0 flex-1 truncate">{child.title}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">{statusLabel[child.status]}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

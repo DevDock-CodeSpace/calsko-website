@@ -15,7 +15,7 @@ unless it says otherwise. Conventions live in [CLAUDE.md](../CLAUDE.md); setup i
 | Files: docs (TipTap) and whiteboards (React Flow, free drawing, Mermaid import) in shared folders | Built |
 | Issues: list/board, sprints, views, activity, shortcuts, import (CSV/Linear/Notion/Jira), Plans, Issues hub, Starred | Built |
 | GitHub: repos linked to projects, App connection, branch on In Progress, PR webhooks move issues | Built |
-| Meetings: Jitsi via JaaS, repeating meetings, calendar view, .ics, Google Calendar sync and RSVPs | Built |
+| Meetings: Jitsi via JaaS, repeating meetings, calendar view, .ics, Google Calendar and Outlook (Microsoft Graph) invites and RSVPs; only the organizer's sign-in changes the invite | Built |
 | Learning: modules, lessons, progress, a whiteboard per lesson | Built |
 | Learning platform: Teacher role, teachers create courses and co-teachers, per-course enrollment (open / invite only), single-use course codes (fee waived), Learning page (Teaching / My learning / Browse), public course catalog (price ₹/$, publish, /learn pages; free courses joinable, paid via codes until checkout); [LEARNING_PLATFORM.md](LEARNING_PLATFORM.md) | Catalog on branch `feat/course-catalog` |
 | Notes: private notes with an optional time that pops up (pg_cron → bell) | Built |
@@ -60,7 +60,7 @@ How notifications are sent: triggers queue one row per event in `email_outbox` (
 `kick-email-worker` calls the `send-emails` function through pg_net, only when something is due; the function claims a batch
 (`email_claim_batch`, which reads recipients, settings and addresses at send time), sends through Resend and reports back
 (`email_finish_batch`, two retries). Meeting emails wait 2 minutes so quick edits become one email; meetings synced to Google
-Calendar are left to Google's invites. At most 90 recipients a day (Resend free plan: 100). People switch reminder and
+Calendar or Outlook are left to that calendar's invites. At most 90 recipients a day (Resend free plan: 100). People switch reminder and
 meeting emails off in `email_settings` (profile menu → Email), which also keeps their time zone, saved at sign-in.
 
 Secrets per project: function secrets `RESEND_API_KEY`, `EMAIL_WORKER_SECRET`, optional `APP_URL` (Dev:

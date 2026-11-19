@@ -1,38 +1,42 @@
-import { connectGoogleCalendar } from '@/features/auth/api'
-import { clearCalendarToken, getCalendarToken } from '@/features/auth/google-calendar'
+import { connectCalendar } from '@/features/auth/api'
+import { clearCalendarToken, getCalendarToken } from '@/features/auth/calendar-token'
 import { DataError } from '@/lib/errors'
 import {
   fetchInvitees,
   fetchSeriesSessions,
-  saveRsvps,
   setCalendarEventId,
   setSeriesCalendarEventId,
   type LiveSession,
 } from './api'
+import { CalendarAuthError, storeReplies, type Reply } from './calendar-shared'
+import { eventProvider, idFor, opProvider, providerEventId, type CalendarOp } from './calendar-plan'
+import {
+  cancelOutlookEvent,
+  cancelOutlookOccurrence,
+  endOutlookSeries,
+  fetchOutlookReplies,
+  syncOutlookEvent,
+  syncOutlookMeeting,
+  syncOutlookSeries,
+} from './outlook-calendar'
 import { toRdate } from './recurrence'
 import { logError } from '@/lib/error-tracking'
 
-// Google Calendar sync for live sessions. The organizer's own calendar holds
-// the event; everyone the session is for is an attendee, and Google emails
-// them (sendUpdates=all) on create, change and cancel.
+// Calendar sync for live sessions, to the organizer's Google Calendar (this
+// file) or Outlook (outlook-calendar.ts). The organizer's own calendar holds
+// the event; everyone the session is for is an attendee, and the provider
+// emails them on create, change and cancel.
 //
-// Calendar calls need the organizer's Google token (features/auth/google-calendar).
-// When it's missing or expired, the change is queued in sessionStorage, the
-// organizer goes through Google once, and useCalendarQueue() finishes the work
-// on the page they come back to.
+// Calendar calls need the organizer's token for that provider
+// (features/auth/calendar-token). When it's missing or expired, the change is
+// queued in sessionStorage, the organizer goes through Google or Microsoft
+// once, and useCalendarQueue() finishes the work on the page they come back to.
 
 const EVENTS_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events'
 const QUEUE_KEY = 'devdock:calendar-queue'
 
-export type CalendarOp =
-  /** Create the event, or update it when the session already has one. */
-  | { kind: 'sync'; sessionId: string; url: string }
-  /** One recurring event for a whole series (every meeting shares its id). */
-  | { kind: 'sync_series'; seriesId: string; url: string }
-  /** Cancel an event whose session was deleted. */
-  | { kind: 'delete'; eventId: string }
-
-class CalendarAuthError extends Error {}
+export type { CalendarOp } from './calendar-plan'
+export { cancelOps, syncProvider } from './calendar-plan'
 
 async function calendarFetch(token: string, path: string, init: RequestInit): Promise<Response> {
   const response = await fetch(`${EVENTS_URL}${path}`, {
@@ -40,7 +44,7 @@ async function calendarFetch(token: string, path: string, init: RequestInit): Pr
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...init.headers },
   })
   if (response.status === 401) {
-    clearCalendarToken()
+    clearCalendarToken('google')
     throw new CalendarAuthError('Google Calendar token expired')
   }
   return response
@@ -68,8 +72,9 @@ function eventBody(session: LiveSession, invitees: string[], url: string, series
 async function syncEvent(token: string, session: LiveSession, url: string): Promise<void> {
   const invitees = await fetchInvitees(session.id)
   const body = JSON.stringify(eventBody(session, invitees, url))
-  if (session.calendar_event_id) {
-    const response = await calendarFetch(token, `/${encodeURIComponent(session.calendar_event_id)}?sendUpdates=all`, {
+  const existing = idFor('google', session.calendar_event_id)
+  if (existing) {
+    const response = await calendarFetch(token, `/${encodeURIComponent(existing)}?sendUpdates=all`, {
       method: 'PATCH',
       body,
     })
@@ -95,8 +100,9 @@ async function syncSeriesEvent(token: string, seriesId: string, url: string): Pr
   if (!first) return
   const invitees = await fetchInvitees(first.id)
   const body = JSON.stringify(eventBody(first, invitees, url, series))
-  if (first.calendar_event_id) {
-    const response = await calendarFetch(token, `/${encodeURIComponent(first.calendar_event_id)}?sendUpdates=all`, {
+  const existing = idFor('google', first.calendar_event_id)
+  if (existing) {
+    const response = await calendarFetch(token, `/${encodeURIComponent(existing)}?sendUpdates=all`, {
       method: 'PATCH',
       body,
     })
@@ -127,27 +133,46 @@ type GoogleEvent = { id: string; attendees?: { email?: string; responseStatus?: 
  * else has to connect a calendar for this to work.
  */
 async function storeRsvps(sessionIds: string[], event: GoogleEvent): Promise<void> {
-  const responses = (event.attendees ?? [])
+  const known = ['accepted', 'declined', 'tentative', 'needsAction']
+  const replies: Reply[] = (event.attendees ?? [])
     .filter((a) => !a.self && a.email)
-    .map((a) => ({ email: a.email as string, status: a.responseStatus ?? 'needsAction' }))
+    .map((a) => ({
+      email: a.email as string,
+      status: (known.includes(a.responseStatus ?? '') ? a.responseStatus : 'needsAction') as Reply['status'],
+    }))
   // Replies belong to every meeting of a series, which share one Google event.
-  for (const id of sessionIds) await saveRsvps(id, responses)
+  await storeReplies(sessionIds, replies)
 }
 
 /** Reads the event again and refreshes the stored replies. Organizers only. */
 export async function refreshRsvps(session: LiveSession): Promise<boolean> {
-  const token = getCalendarToken()
-  if (!token || !session.calendar_event_id) return false
-  const response = await calendarFetch(token, `/${encodeURIComponent(session.calendar_event_id)}`, { method: 'GET' })
-  if (!response.ok) {
+  const stored = session.calendar_event_id
+  if (!stored) return false
+  const provider = eventProvider(stored)
+  const token = getCalendarToken(provider)
+  if (!token) return false
+  const id = providerEventId(stored)
+  let replies: Reply[] | null
+  if (provider === 'outlook') {
+    replies = await fetchOutlookReplies(token, id)
+  } else {
+    const response = await calendarFetch(token, `/${encodeURIComponent(id)}`, { method: 'GET' })
     // Nothing to mirror (deleted in Google, or the token lost its scope).
     if (response.status === 404 || response.status === 410) return false
-    throw await googleError(response)
+    if (!response.ok) throw await googleError(response)
+    await storeRsvps(await sameEventIds(session), (await response.json()) as GoogleEvent)
+    return true
   }
-  const event = (await response.json()) as GoogleEvent
-  const ids = session.series_id ? (await fetchSeriesSessions(session.series_id)).map((s) => s.id) : [session.id]
-  await storeRsvps(ids, event)
+  if (!replies) return false
+  await storeReplies(await sameEventIds(session), replies)
   return true
+}
+
+/** The meetings that share this session's event: the series for a repeating event, else just this one. */
+async function sameEventIds(session: LiveSession): Promise<string[]> {
+  if (!session.series_id) return [session.id]
+  const series = await fetchSeriesSessions(session.series_id)
+  return series.filter((s) => s.calendar_event_id === session.calendar_event_id).map((s) => s.id)
 }
 
 async function googleError(response: Response): Promise<DataError> {
@@ -186,19 +211,40 @@ export function hasQueuedCalendarOps(): boolean {
 }
 
 async function runOp(token: string, op: CalendarOp, load: (id: string) => Promise<LiveSession | null>) {
-  if (op.kind === 'delete') return deleteEvent(token, op.eventId)
-  if (op.kind === 'sync_series') return syncSeriesEvent(token, op.seriesId, op.url)
-  const session = await load(op.sessionId)
-  // Cancelled in the meantime: nothing to sync.
-  if (session) await syncEvent(token, session, op.url)
+  const outlook = opProvider(op) === 'outlook'
+  switch (op.kind) {
+    case 'delete': {
+      const id = providerEventId(op.eventId)
+      return outlook ? cancelOutlookEvent(token, id) : deleteEvent(token, id)
+    }
+    case 'delete_occurrence':
+      return cancelOutlookOccurrence(token, providerEventId(op.eventId), op.startsAt, op.endsAt)
+    case 'end_series':
+      return endOutlookSeries(token, providerEventId(op.eventId), op.lastStartsAt)
+    case 'sync_series':
+      return outlook ? syncOutlookSeries(token, op.seriesId, op.url) : syncSeriesEvent(token, op.seriesId, op.url)
+    case 'sync_meeting': {
+      // Google: the series is one event listing every date, so it's re-synced as a whole.
+      if (!outlook) return syncSeriesEvent(token, op.seriesId, op.url)
+      const session = await load(op.sessionId)
+      return session ? syncOutlookMeeting(token, session, op.before, op.url) : undefined
+    }
+    case 'sync': {
+      const session = await load(op.sessionId)
+      // Cancelled in the meantime: nothing to sync.
+      if (!session) return
+      return outlook ? syncOutlookEvent(token, session, op.url) : syncEvent(token, session, op.url)
+    }
+  }
 }
 
 export type CalendarResult = 'done' | 'redirecting'
 
 /**
- * Runs calendar changes now if there's a Google token, otherwise queues them
- * and sends the organizer to Google (resolves 'redirecting' as the page leaves).
- * `returnTo` is where they come back to; that page runs useCalendarQueue().
+ * Runs calendar changes now when there's a token for their calendar, otherwise
+ * queues them and sends the organizer to Google or Microsoft (resolves
+ * 'redirecting' as the page leaves). `returnTo` is where they come back to;
+ * that page runs useCalendarQueue().
  */
 export async function runCalendarOps(
   ops: CalendarOp[],
@@ -208,41 +254,49 @@ export async function runCalendarOps(
     email: string | undefined
   },
 ): Promise<CalendarResult> {
-  const token = getCalendarToken()
-  if (token) {
-    try {
-      for (const op of ops) await runOp(token, op, options.load)
-      return 'done'
-    } catch (error) {
-      if (!(error instanceof CalendarAuthError)) throw error
-      // Expired mid-way: fall through and reconnect (ops are idempotent).
+  for (const [i, op] of ops.entries()) {
+    const provider = opProvider(op)
+    const token = getCalendarToken(provider)
+    if (token) {
+      try {
+        await runOp(token, op, options.load)
+        continue
+      } catch (error) {
+        if (!(error instanceof CalendarAuthError)) throw error
+        // Expired mid-way: fall through and reconnect (ops are idempotent).
+      }
     }
+    writeQueue([...readQueue(), ...ops.slice(i)])
+    await connectCalendar(provider, options.returnTo, options.email)
+    return 'redirecting'
   }
-  writeQueue([...readQueue(), ...ops])
-  await connectGoogleCalendar(options.returnTo, options.email)
-  return 'redirecting'
+  return 'done'
 }
 
 /**
- * After coming back from Google: runs the queued changes. Returns how many ran,
- * or null when there's nothing to do or no token (the queue is kept for later).
+ * After coming back from Google or Microsoft: runs the queued changes that
+ * have a token. Returns how many ran, or null when none could (the queue is
+ * kept for later).
  */
 export async function flushCalendarQueue(load: (sessionId: string) => Promise<LiveSession | null>) {
   const ops = readQueue()
-  const token = getCalendarToken()
-  if (ops.length === 0 || !token) return null
-  writeQueue([])
-  const failed: CalendarOp[] = []
+  if (ops.length === 0) return null
+  const ready = ops.filter((op) => getCalendarToken(opProvider(op)))
+  if (ready.length === 0) return null
+  const kept: CalendarOp[] = ops.filter((op) => !ready.includes(op))
+  writeQueue(kept)
   let firstError: unknown
-  for (const op of ops) {
+  for (const op of ready) {
     try {
-      await runOp(token, op, load)
+      await runOp(getCalendarToken(opProvider(op)) as string, op, load)
     } catch (error) {
-      failed.push(op)
+      kept.push(op)
       firstError ??= error
     }
   }
-  writeQueue(failed)
-  if (firstError) throw firstError instanceof CalendarAuthError ? new DataError('Google Calendar sign-in expired. Try again.') : firstError
-  return ops.length
+  writeQueue(kept)
+  if (firstError) {
+    throw firstError instanceof CalendarAuthError ? new DataError('Calendar sign-in expired. Try again.') : firstError
+  }
+  return ready.length
 }

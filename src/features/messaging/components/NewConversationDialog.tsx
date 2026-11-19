@@ -81,7 +81,7 @@ export function NewConversationDialog({ teamId, people, canCreateChannel, onCrea
           {kind === 'channel' && <><Label htmlFor="conversation-description">Description</Label><Textarea id="conversation-description" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={5000} rows={2} /></>}
           <div className="space-y-2">
             <Label>{kind === 'dm' ? 'Person' : 'Participants'}</Label>
-            <Popover open={peoplePickerOpen} onOpenChange={(next) => {
+            <Popover modal open={peoplePickerOpen} onOpenChange={(next) => {
               setPeoplePickerOpen(next)
               if (!next) setPeopleSearch('')
             }}>
@@ -109,43 +109,48 @@ export function NewConversationDialog({ teamId, people, canCreateChannel, onCrea
                     className="h-9 rounded-none border-0 pl-8 shadow-none focus-visible:ring-0"
                   />
                 </div>
-                <div className="max-h-56 space-y-1.5 overflow-y-auto p-2">
-                  {matchingCandidates.map((person) => {
-                    const isSelected = selected.includes(person.user_id)
-                    return (
-                      <button
-                        key={person.user_id}
-                        type="button"
-                        aria-pressed={isSelected}
-                        onClick={() => {
-                          if (kind === 'dm') {
-                            setSelected([person.user_id])
-                            setPeoplePickerOpen(false)
-                            setPeopleSearch('')
-                          } else {
-                            toggle(person.user_id)
-                          }
-                        }}
-                        className={`flex w-full items-center gap-3 rounded-md border px-3 py-2.5 text-left text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
-                          isSelected
-                            ? 'border-brand/50 bg-brand/5 text-foreground'
-                            : 'border-border bg-background hover:bg-muted'
-                        }`}
-                      >
-                        <span className="min-w-0 flex-1 truncate">{person.profile?.display_name ?? 'Unnamed member'}</span>
-                        <span className={`flex size-5 shrink-0 items-center justify-center rounded-md border ${
-                          isSelected ? 'border-brand bg-brand text-brand-foreground' : 'border-input'
-                        }`}>
-                          {isSelected && <Check className="size-3.5" aria-hidden="true" />}
-                        </span>
-                      </button>
-                    )
-                  })}
-                  {matchingCandidates.length === 0 && (
-                    <p className="px-2 py-3 text-center text-sm text-muted-foreground">
-                      {candidates.length === 0 ? 'No other group members are available.' : 'No people match your search.'}
-                    </p>
-                  )}
+                <div
+                  dir="rtl"
+                  className="max-h-40 overflow-y-scroll overscroll-contain p-2 [scrollbar-color:var(--muted-foreground)_var(--muted)] [scrollbar-width:auto] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-muted [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/50 hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground"
+                >
+                  <div dir="ltr" className="space-y-1.5">
+                    {matchingCandidates.map((person) => {
+                      const isSelected = selected.includes(person.user_id)
+                      return (
+                        <button
+                          key={person.user_id}
+                          type="button"
+                          aria-pressed={isSelected}
+                          onClick={() => {
+                            if (kind === 'dm') {
+                              setSelected([person.user_id])
+                              setPeoplePickerOpen(false)
+                              setPeopleSearch('')
+                            } else {
+                              toggle(person.user_id)
+                            }
+                          }}
+                          className={`flex w-full items-center gap-3 rounded-md border px-3 py-2.5 text-left text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
+                            isSelected
+                              ? 'border-brand/50 bg-brand/5 text-foreground'
+                              : 'border-border bg-background hover:bg-muted'
+                          }`}
+                        >
+                          <span className="min-w-0 flex-1 truncate">{person.profile?.display_name ?? 'Unnamed member'}</span>
+                          <span className={`flex size-5 shrink-0 items-center justify-center rounded-md border ${
+                            isSelected ? 'border-brand bg-brand text-brand-foreground' : 'border-input'
+                          }`}>
+                            {isSelected && <Check className="size-3.5" aria-hidden="true" />}
+                          </span>
+                        </button>
+                      )
+                    })}
+                    {matchingCandidates.length === 0 && (
+                      <p className="px-2 py-3 text-center text-sm text-muted-foreground">
+                        {candidates.length === 0 ? 'No other group members are available.' : 'No people match your search.'}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </PopoverContent>
             </Popover>
