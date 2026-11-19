@@ -1,4 +1,4 @@
-import { ArrowUpRight, ChevronLeft, ChevronRight, Copy, FileText, Pencil, Plus, Presentation } from 'lucide-react'
+import { ArrowUpRight, ChevronLeft, ChevronRight, Copy, FileText, Pencil, Plus, Presentation, Trash2 } from 'lucide-react'
 import { useRef, useState, type KeyboardEvent, type ReactNode, type WheelEvent } from 'react'
 import { Link } from 'react-router'
 import { toast } from 'sonner'
@@ -13,6 +13,7 @@ export type StackItem = {
   meta: string
   to: string
   edit?: { onClick: () => void }
+  remove?: { onClick: () => void }
   quickEdit?: {
     value: string
     onChange: (value: string) => void
@@ -225,6 +226,17 @@ export function FileStack({ items, extra, newMenu }: { items: StackItem[]; extra
                     >
                       Open <ArrowUpRight className="size-3.5" />
                     </Link>
+                    {item.remove && (
+                      <button
+                        type="button"
+                        aria-label={`Delete ${item.title}`}
+                        tabIndex={d === 0 ? 0 : -1}
+                        onClick={item.remove.onClick}
+                        className="inline-flex size-8 items-center justify-center rounded-lg border text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    )}
                   </>
                 )}
               </div>
