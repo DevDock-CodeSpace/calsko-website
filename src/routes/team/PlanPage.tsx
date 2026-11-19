@@ -31,7 +31,7 @@ import { PLAN_STATUS_ORDER, planStatusLabel, planStatusTile } from '@/features/p
 import { planProgress } from '@/features/plans/progress'
 import { teamMembersQuery, type TeamMember } from '@/features/teams/api'
 import { useCurrentTeam } from '@/features/teams/hooks'
-import { diagramPath, docPath, filesPath, hubPlansPath, issuePath } from '@/features/teams/nav'
+import { diagramPath, docPath, filesPath, hubPlansPath, issuePath, planPath } from '@/features/teams/nav'
 import { errorMessage } from '@/lib/errors'
 import { formatShortDate, timeAgo } from '@/lib/format'
 import { ownSave, ownWrite } from '@/lib/realtime'
@@ -762,7 +762,10 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
     },
     onSuccess: ({ kind, id }) => {
       void queryClient.invalidateQueries({ queryKey: [kind === 'doc' ? 'documents' : 'diagrams', 'team', team.id] })
-      void navigate(kind === 'doc' ? docPath(team.slug, id) : diagramPath(team.slug, id))
+      void navigate(
+        kind === 'doc' ? docPath(team.slug, id) : diagramPath(team.slug, id),
+        kind === 'diagram' ? { state: { planReturnTo: planPath(team.slug, plan.id) } } : undefined,
+      )
     },
     onError: (error) => toast.error(errorMessage(error)),
   })
@@ -824,6 +827,7 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
           title: board.title,
           meta: updated(board.updated_at),
           to: diagramPath(team.slug, board.id),
+          state: { planReturnTo: planPath(team.slug, plan.id) },
           remove: canDeletePlanFiles ? { onClick: () => setDeleteTarget({ id: board.id, kind: 'diagram', title: board.title }) } : undefined,
         }]
       : []),
@@ -843,6 +847,7 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
         title: b.title,
         meta: updated(b.updated_at),
         to: diagramPath(team.slug, b.id),
+        state: { planReturnTo: planPath(team.slug, plan.id) },
         remove: canDeletePlanFiles ? { onClick: () => setDeleteTarget({ id: b.id, kind: 'diagram', title: b.title }) } : undefined,
         at: b.updated_at,
       })),
@@ -860,7 +865,11 @@ function PlanFiles({ plan }: { plan: PlanDetail }) {
               type="button"
               className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-dashed px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
               disabled={openBoard.isPending}
-              onClick={() => openBoard.mutate(plan.id, { onSuccess: (id) => void navigate(diagramPath(team.slug, id)) })}
+              onClick={() =>
+                openBoard.mutate(plan.id, {
+                  onSuccess: (id) => void navigate(diagramPath(team.slug, id), { state: { planReturnTo: planPath(team.slug, plan.id) } }),
+                })
+              }
             >
               <Presentation className="size-3.5" /> Start the whiteboard
             </button>

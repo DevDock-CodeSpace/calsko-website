@@ -13,7 +13,7 @@ import { folderPath } from '@/features/docs/folders'
 import { readFilesLocationState } from '@/features/docs/files-navigation'
 import { useCurrentTeam } from '@/features/teams/hooks'
 import { useOthersTyping } from '@/hooks/use-others-typing'
-import { filesPath } from '@/features/teams/nav'
+import { filesPath, hubPlansPath } from '@/features/teams/nav'
 import { errorMessage } from '@/lib/errors'
 import { sameJson } from '@/lib/json'
 import { timeSince } from '@/lib/format'
@@ -53,12 +53,14 @@ export default function DiagramView({
   const [now] = useState(Date.now)
   const listPath = filesPath(team.slug, workspaceId)
   const filesState = readFilesLocationState(location.state, listPath)
+  const planReturnTo = readPlanReturnTo(location.state, hubPlansPath(team.slug))
   // Folders are asked for only when the diagram is in one (most aren't); the path fills in when they arrive.
   const folders = useQuery({ ...foldersQuery(diagram.team_id, diagram.workspace_id), enabled: diagram.folder_id !== null }).data ?? []
   const path = folderPath(diagram.folder_id, folders)
   const folderLink = (folderId: string | null) => filesPath(team.slug, workspaceId, { folder: folderId })
-  // Back (and after deleting): the folder the diagram is in, in Files.
-  const backTo = filesState?.filesReturnTo ?? folderLink(diagram.folder_id)
+  // Back (and after deleting): Plans when opened there, otherwise the folder in Files.
+  const backTo = planReturnTo ?? filesState?.filesReturnTo ?? folderLink(diagram.folder_id)
+  const backLabel = planReturnTo ? 'Plans' : 'Files'
   const [initial, setInitial] = useState(() => parse(diagram.data))
 
   // ------------------------------------------------------------ autosave
@@ -246,13 +248,13 @@ export default function DiagramView({
           {canWrite ? <SaveIndicator status={status} /> : <span className="rounded-sm border px-1.5 py-0.5">View only</span>}
         </div>
       ) : (
-      /* One slim row: back to Files (and the folder) · title · where and when · saved · delete. */
+      /* One slim row: back to Plans or Files (and the folder) · title · where and when · saved · delete. */
       <header className="flex h-12 shrink-0 items-center gap-3 border-b px-3 md:px-4">
-        <nav aria-label="Folder path" className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-          <Link to={filesState?.filesReturnTo ?? listPath} state={filesState ?? undefined} className="inline-flex items-center gap-1 rounded-sm hover:text-foreground">
-            <ArrowLeft className="size-3.5" /> Files
+        <nav aria-label={planReturnTo ? 'Plan navigation' : 'Folder path'} className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+          <Link to={backTo} state={planReturnTo ? undefined : filesState ?? undefined} className="inline-flex items-center gap-1 rounded-sm hover:text-foreground">
+            <ArrowLeft className="size-3.5" /> {backLabel}
           </Link>
-          {path.map((folder) => (
+          {!planReturnTo && path.map((folder) => (
             <span key={folder.id} className="hidden items-center gap-1 sm:flex">
               <ChevronRight className="size-3 shrink-0" />
               <Link to={folderLink(folder.id)} className="max-w-28 truncate hover:text-foreground">
@@ -351,6 +353,15 @@ export default function DiagramView({
       />
     </div>
   )
+}
+
+function readPlanReturnTo(state: unknown, plansPath: string): string | null {
+  if (typeof state !== 'object' || state === null) return null
+  const path = (state as Record<string, unknown>).planReturnTo
+  const prefix = `${plansPath}/`
+  if (typeof path !== 'string' || !path.startsWith(prefix)) return null
+  const planId = path.slice(prefix.length)
+  return planId && !/[/?#]/.test(planId) ? path : null
 }
 
 function SaveIndicator({ status }: { status: SaveStatus }) {

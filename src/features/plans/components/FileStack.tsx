@@ -12,6 +12,7 @@ export type StackItem = {
   preview?: string
   meta: string
   to: string
+  state?: { planReturnTo: string }
   edit?: { onClick: () => void }
   remove?: { onClick: () => void }
   quickEdit?: {
@@ -179,6 +180,7 @@ export function FileStack({ items, extra, newMenu }: { items: StackItem[]; extra
                   <>
                     <Link
                       to={item.to}
+                      state={item.state}
                       tabIndex={d === 0 ? 0 : -1}
                       onClick={(event) => {
                         if (!item.quickEdit?.onOpen()) event.preventDefault()
@@ -221,6 +223,7 @@ export function FileStack({ items, extra, newMenu }: { items: StackItem[]; extra
                     )}
                     <Link
                       to={item.to}
+                      state={item.state}
                       tabIndex={d === 0 ? 0 : -1}
                       className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
                     >
