@@ -34,7 +34,17 @@ type SaveStatus = 'saved' | 'pending' | 'saving' | 'error'
  * gets the same canvas read-only. `embedded` (a lesson's Whiteboard tab) drops the
  * title bar for a slim status line and fills its parent instead of the window.
  */
-export default function DiagramView({ diagram, canWrite, embedded = false }: { diagram: Diagram; canWrite: boolean; embedded?: boolean }) {
+export default function DiagramView({
+  diagram,
+  canWrite,
+  canDelete = canWrite,
+  embedded = false,
+}: {
+  diagram: Diagram
+  canWrite: boolean
+  canDelete?: boolean
+  embedded?: boolean
+}) {
   const { workspaceId } = useParams()
   const { team } = useCurrentTeam()
   const queryClient = useQueryClient()
@@ -284,15 +294,17 @@ export default function DiagramView({ diagram, canWrite, embedded = false }: { d
         {canWrite && (
           <div className="flex shrink-0 items-center gap-1">
             <SaveIndicator status={status} />
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Delete whiteboard"
-              className="text-muted-foreground hover:text-destructive"
-              onClick={() => setConfirmDelete(true)}
-            >
-              <Trash2 />
-            </Button>
+            {canDelete && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Delete whiteboard"
+                className="text-muted-foreground hover:text-destructive"
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 />
+              </Button>
+            )}
           </div>
         )}
       </header>

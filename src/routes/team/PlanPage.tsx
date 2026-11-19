@@ -121,9 +121,10 @@ const BAR: [IssueStatus, string][] = [
  * (the Brief, the Whiteboard and whatever else is in its folder in Files), the issues nobody has taken
  * yet (Up for grabs, with Assign to me), its issues by person, and a details panel on the right
  * (progress, status, lead, dates, people, projects) that closes with ✕; it starts open and the choice
- * isn't remembered. Its lead, its creator and group owners/admins edit and delete it; everyone in the
- * group edits its files. The Brief's full text loads only when its inline editor is opened; the page
- * otherwise uses the hub's cached lists and `planLoader` data.
+ * isn't remembered. Its lead, its creator and group owners/admins edit and delete it. The Brief is
+ * group-editable; its linked Whiteboard is editable by those same Plan roles. The Brief's full text
+ * loads only when its inline editor is opened; the page otherwise uses the hub's cached lists and
+ * `planLoader` data.
  */
 export function PlanPage() {
   const { planId = '' } = useParams()
