@@ -139,9 +139,9 @@ export function IssueRowView({
           <PriorityIcon priority={issue.priority} />
         </button>
       </PriorityPicker>
-      <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">{id}</span>
+      <span className="w-fit shrink-0 font-mono text-xs text-muted-foreground">{id}</span>
       <StatusPicker value={issue.status} onChange={(status) => update({ status })} {...nav.menuFor('status')}>
-        <button type="button" className={iconButton} aria-label={`Status: ${statusLabel[issue.status]}`}>
+        <button type="button" className={cn(iconButton, '-ml-0.5')} aria-label={`Status: ${statusLabel[issue.status]}`}>
           <StatusIcon status={issue.status} />
         </button>
       </StatusPicker>
