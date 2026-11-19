@@ -1,7 +1,7 @@
 import type { Collection, WorkspaceSummary } from '@/features/workspaces/api'
 import type { StarterPagePreference } from '@/features/auth/api'
 import type { TeamType } from './api'
-import { chatPath, hasTeamIssues, learningPath, teamIssuesPath, teamPath, workspacePath } from './nav'
+import { chatPath, hasTeamIssues, learningPath, teamIssuesPath, teamPath, workspaceDefaultPath } from './nav'
 
 /** Where a group opens (after signing in, or switching group or collection): its loader picks the page. */
 export const startPath = (slug: string, options: { collectionSwitch?: boolean } = {}) =>
@@ -23,7 +23,7 @@ export function starterPagePath(
   if (preference?.type === 'my-issues' && hasTeamIssues(teamType, workspaces)) return teamIssuesPath(slug)
   if (preference?.type === 'project') {
     const project = workspaces.find((workspace) => workspace.id === preference.workspaceId && workspace.type === 'project')
-    if (project) return workspacePath(slug, project.id)
+    if (project) return workspaceDefaultPath(slug, project)
   }
   if (preference?.type === 'course') {
     const course = workspaces.find(

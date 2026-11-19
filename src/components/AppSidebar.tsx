@@ -28,7 +28,7 @@ import { useUnread } from '@/features/messaging/hooks'
 import { UserMenu } from '@/features/auth/components/UserMenu'
 import { TeamSwitcher } from '@/features/teams/components/TeamSwitcher'
 import { useCurrentTeam } from '@/features/teams/hooks'
-import { getTeamNav, hasTeamIssues, hasTeamLearning, isNavActive, teamPath, workspacePath, type NavItem } from '@/features/teams/nav'
+import { getTeamNav, hasTeamIssues, hasTeamLearning, isNavActive, teamPath, workspaceDefaultPath, type NavItem } from '@/features/teams/nav'
 import { collectionTypeOrder, workspaceTypeOrder, workspaceTypes } from '@/features/teams/permissions'
 import { useCollectionView } from '@/features/collections/hooks'
 import { rememberCollectionView } from '@/features/collections/view'
@@ -143,7 +143,7 @@ export function AppSidebar({ sidebarWidth }: { sidebarWidth: SidebarWidth }) {
               </SidebarGroupLabel>
               <SidebarMenu>
                 {shown.map((workspace) => {
-                  const to = workspacePath(team.slug, workspace.id)
+                  const to = workspaceDefaultPath(team.slug, workspace)
                   const Icon = workspaceTypes[workspace.type].icon
                   const starred = isStarred(workspace.id)
                   return (

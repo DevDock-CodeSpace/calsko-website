@@ -28,7 +28,7 @@ import { planQuery } from '@/features/plans/api'
 import { lessonQuery } from '@/features/learning/api'
 import { issueIdentifier } from '@/features/issues/meta'
 import { useCurrentTeam, useCurrentWorkspace } from '@/features/teams/hooks'
-import { getTeamNav, getWorkspaceTabs, isNavActive, teamIssuesPath, teamPath, workspacePath, type NavItem } from '@/features/teams/nav'
+import { getTeamNav, getWorkspaceTabs, isNavActive, teamIssuesPath, teamPath, workspaceDefaultPath, workspacePath, type NavItem } from '@/features/teams/nav'
 import { workspaceQuery } from '@/features/workspaces/api'
 import { useStatusSync } from '@/features/status/useStatusSync'
 import { CreateWorkspaceDialog } from '@/features/workspaces/components/CreateWorkspaceDialog'
@@ -124,7 +124,7 @@ function WorkspaceBreadcrumb() {
     <Crumbs
       crumbs={[
         { label: team.name, to: teamPath(team.slug) },
-        { label: workspace.title, to: workspacePath(team.slug, workspace.id) },
+        { label: workspace.title, to: workspaceDefaultPath(team.slug, workspace) },
         ...section,
         ...item,
       ]}

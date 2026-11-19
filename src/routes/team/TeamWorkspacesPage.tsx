@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { AvatarStack } from '@/components/PersonRow'
 import { useAuth } from '@/features/auth/hooks'
 import { useCurrentTeam } from '@/features/teams/hooks'
-import { teamPath, workspacePath } from '@/features/teams/nav'
+import { teamPath, workspaceDefaultPath } from '@/features/teams/nav'
 import {
   allowedWorkspaceTypes,
   collectionTypeOrder,
@@ -116,7 +116,7 @@ export function TeamWorkspacesPage() {
                       <TypeIcon className="size-4 shrink-0 text-muted-foreground" />
                       <div className="min-w-0">
                         <Link
-                          to={workspacePath(team.slug, workspace.id)}
+                          to={workspaceDefaultPath(team.slug, workspace)}
                           className="block truncate text-sm font-medium outline-none after:absolute after:inset-0"
                         >
                           {workspace.title}
