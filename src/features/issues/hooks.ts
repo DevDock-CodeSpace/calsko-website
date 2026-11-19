@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { useAuth } from '@/features/auth/hooks'
 import { teamPlansQuery } from '@/features/plans/api'
-import { workspaceReposQuery, type Repo } from '@/features/repos/api'
+import { repoKeys, workspaceReposQuery, type Repo } from '@/features/repos/api'
 import { useCurrentWorkspace } from '@/features/teams/hooks'
 import { workspaceMembersQuery } from '@/features/workspaces/api'
 import { errorMessage } from '@/lib/errors'
@@ -85,6 +85,7 @@ export function useCreateIssueBranch() {
         queryClient.invalidateQueries({ queryKey: issueKeys.branches(issue.id) }),
         queryClient.invalidateQueries({ queryKey: issueKeys.activity(issue.id) }),
         queryClient.invalidateQueries({ queryKey: issueKeys.detail(workspace.id, issue.number) }),
+        queryClient.invalidateQueries({ queryKey: repoKeys.workspace(workspace.id) }),
         queryClient.invalidateQueries({ queryKey: issueKeys.workspace(workspace.id), refetchType: hadRepo ? 'none' : 'active' }),
       ])
     },
