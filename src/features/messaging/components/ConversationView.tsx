@@ -1,12 +1,15 @@
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDown, Bell, BellOff, Hash, MessageCircle, Users } from 'lucide-react'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowDown, Bell, BellOff, Hash, LoaderCircle, MessageCircle, Users, Video } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { AvatarStack } from '@/components/PersonRow'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useAuth } from '@/features/auth/hooks'
+import { useAuth, useUserIdentity } from '@/features/auth/hooks'
+import { fetchJaasToken, startConversationCall } from '@/features/live/api'
+import { useLiveCall } from '@/features/live/call/context'
 import type { TeamMember } from '@/features/teams/api'
+import { liveSessionPath } from '@/features/teams/nav'
 import { useOthersTyping } from '@/hooks/use-others-typing'
 import {
   attachmentImageUrlsQuery,
@@ -35,6 +38,8 @@ import { AddGroupMemberDialog } from './AddGroupMemberDialog'
 import { MessageComposer } from './MessageComposer'
 import { MessageItem } from './MessageItem'
 import { logError } from '@/lib/error-tracking'
+import { errorMessage } from '@/lib/errors'
+import { ownWrite } from '@/lib/realtime'
 
 type Props = {
   conversationId: string
@@ -72,11 +77,14 @@ function groupBy<T>(rows: T[], key: (row: T) => string | null) {
 
 export function ConversationView({ conversationId, kind, description, teamId, teamSlug, isGroup, title, muted, people, targetMessageId, onTargetHandled }: Props) {
   const { user } = useAuth()
+  const identity = useUserIdentity()
+  const { call, startCall } = useLiveCall()
   const queryClient = useQueryClient()
   const [limit, setLimit] = useState(PAGE_SIZE)
   const messagesResult = useQuery({ ...messagesQuery(conversationId, limit), placeholderData: keepPreviousData })
   const messages = messagesResult.data ?? NONE
-  const members = useQuery(conversationMembersQuery(conversationId)).data ?? NONE
+  const membersResult = useQuery(conversationMembersQuery(conversationId))
+  const members = membersResult.data ?? NONE
   const pins = useQuery(pinsQuery(conversationId)).data ?? NONE
   // One request each for the whole conversation (not per message), grouped here.
   const reactions = useQuery(conversationReactionsQuery(conversationId)).data ?? NONE
@@ -104,6 +112,27 @@ export function ConversationView({ conversationId, kind, description, teamId, te
   const retryId = useRef<string | null>(null)
   const setMode = useSetNotificationMode(conversationId)
   const { others, markTyping } = useOthersTyping(`messages:${conversationId}`, true)
+  const canStartCall = kind !== 'channel' && members.some((member) => member.user_id === user.id)
+  const callTitle = `Call: ${displayName(title)}`
+  const startChatCall = useMutation({
+    mutationFn: async () => {
+      const { id } = await startConversationCall({ teamId, conversationId, title: callTitle })
+      return { id, jaas: await fetchJaasToken(id) }
+    },
+    onSuccess: ({ id, jaas }) => {
+      ownWrite('live_session_events', id)
+      void queryClient.invalidateQueries({ queryKey: ['live'] })
+      startCall({
+        sessionId: id,
+        jaas,
+        title: callTitle,
+        displayName: identity.name,
+        email: identity.email ?? '',
+        returnTo: liveSessionPath(teamSlug, id),
+      })
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  })
 
   // --- scrolling: stay at the bottom while reading the latest, otherwise offer a jump ---
   const scroller = useRef<HTMLDivElement>(null)
@@ -273,6 +302,19 @@ export function ConversationView({ conversationId, kind, description, teamId, te
             {muted ? <BellOff /> : <Bell />}
             <span className="max-sm:sr-only">{muted ? 'Muted' : 'Mute'}</span>
           </Button>
+          {kind !== 'channel' && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!canStartCall || membersResult.isPending || startChatCall.isPending || call !== null}
+              onClick={() => startChatCall.mutate()}
+              aria-label="Start call"
+              title={call ? 'Leave your current call before starting another' : 'Start a call'}
+            >
+              {startChatCall.isPending ? <LoaderCircle className="animate-spin" /> : <Video />}
+              <span className="max-sm:sr-only">Call</span>
+            </Button>
+          )}
           {isGroup && <AddGroupMemberDialog conversationId={conversationId} members={members} people={people} onAdded={() => { void queryClient.invalidateQueries({ queryKey: conversationKeys.members(conversationId) }); void queryClient.invalidateQueries({ queryKey: conversationKeys.messages(conversationId) }) }} />}
         </div>
       </header>

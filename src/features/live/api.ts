@@ -32,6 +32,7 @@ export type LiveSession = {
   id: string
   team_id: string
   workspace_id: string | null
+  conversation_id: string | null
   title: string
   description: string | null
   starts_at: string
@@ -51,7 +52,7 @@ const RSVP_COLUMNS = ', rsvps:live_session_rsvps(user_id, status, updated_at, pr
 
 // room_name is left out: the browser only gets it with a JaaS token.
 const COLUMNS =
-  'id, team_id, workspace_id, title, description, starts_at, ends_at, calendar_event_id, series_id, created_by, created_at, updated_at, author:profiles!live_sessions_created_by_fkey(display_name, avatar_url), workspace:workspaces!live_sessions_workspace_team_fkey(id, title, type)'
+  'id, team_id, workspace_id, conversation_id, title, description, starts_at, ends_at, calendar_event_id, series_id, created_by, created_at, updated_at, author:profiles!live_sessions_created_by_fkey(display_name, avatar_url), workspace:workspaces!live_sessions_workspace_team_fkey(id, title, type)'
 
 /** The single-meeting select: the same columns plus the embedded replies. */
 const SESSION_COLUMNS = `${COLUMNS}${RSVP_COLUMNS}`
@@ -204,6 +205,30 @@ export async function createLiveSession(
     .select('id')
     .single()
   if (error) throw toDataError('schedule the meeting', error, writeErrors)
+  return data
+}
+
+/** Starts an immediate call for the active members of a direct or group chat. */
+export async function startConversationCall(input: { teamId: string; conversationId: string; title: string }): Promise<{ id: string }> {
+  const startsAt = new Date()
+  const { data, error } = await supabase
+    .from('live_sessions')
+    .insert({
+      team_id: input.teamId,
+      workspace_id: null,
+      conversation_id: input.conversationId,
+      title: input.title.trim(),
+      description: null,
+      starts_at: startsAt.toISOString(),
+      ends_at: new Date(startsAt.getTime() + 60 * 60_000).toISOString(),
+    })
+    .select('id')
+    .single()
+  if (error) {
+    throw toDataError('start the call', error, {
+      '42501': 'You can only start calls in an active direct or group Chat.',
+    })
+  }
   return data
 }
 

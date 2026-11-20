@@ -4,11 +4,11 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router'
 import { LoadMore } from '@/components/LoadMore'
 import { PersonAvatar } from '@/components/PersonRow'
-import { DocScope } from '@/features/docs/components/DocScope'
 import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { meetingsPageQuery, type LiveSession, type MeetingsScope } from '../api'
 import { formatDay, formatTimeRange, sessionStatus } from '../time'
+import { LiveSessionScope } from './LiveSessionScope'
 
 type LiveSessionListProps = {
   scope: MeetingsScope
@@ -121,7 +121,7 @@ function Rows({
                 </span>
                 {showScope && (
                   <span className="pl-6">
-                    <DocScope doc={session} />
+                    <LiveSessionScope session={session} />
                   </span>
                 )}
               </span>

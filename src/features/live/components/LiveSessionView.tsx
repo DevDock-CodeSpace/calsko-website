@@ -8,7 +8,6 @@ import { PersonAvatar } from '@/components/PersonRow'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useUserIdentity } from '@/features/auth/hooks'
-import { DocScope } from '@/features/docs/components/DocScope'
 import { useCurrentTeam } from '@/features/teams/hooks'
 import { livePath, liveSessionPath } from '@/features/teams/nav'
 import { errorMessage } from '@/lib/errors'
@@ -37,6 +36,7 @@ import { useCalendarOps, useCalendarQueue, useCanWriteLive, useNow, usePreferred
 import { canJoin, durationMinutes, EARLY_JOIN_MS, formatDay, formatDuration, formatTime, formatTimeRange, sessionStatus } from '../time'
 import { RsvpList } from './RsvpList'
 import { ScheduleSessionDialog } from './ScheduleSessionDialog'
+import { LiveSessionScope } from './LiveSessionScope'
 
 type LiveSessionViewProps = {
   session: LiveSession & { rsvps?: Rsvp[] }
@@ -89,6 +89,7 @@ export function LiveSessionView({ session, workspaceId }: LiveSessionViewProps) 
 
   const status = sessionStatus(session, now)
   const joinable = canJoin(session, now, canWrite)
+  const chatCall = session.conversation_id !== null
   const active = call?.sessionId === session.id
   const listPath = livePath(team.slug, workspaceId)
 
@@ -180,9 +181,9 @@ export function LiveSessionView({ session, workspaceId }: LiveSessionViewProps) 
     <div>
       <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
         <Video className="size-3.5" />
-        <span>Meeting</span>
+        <span>{chatCall ? 'Chat call' : 'Meeting'}</span>
         <span aria-hidden>·</span>
-        <DocScope doc={session} />
+        <LiveSessionScope session={session} />
       </div>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1.5">
@@ -200,7 +201,7 @@ export function LiveSessionView({ session, workspaceId }: LiveSessionViewProps) 
             <StatusBadge status={status} startsAt={session.starts_at} now={now} />
           </p>
         </div>
-        {canWrite && (
+        {canWrite && !chatCall && (
           <div className="flex shrink-0 items-center gap-1">
             <ScheduleSessionDialog session={session} workspaceId={workspaceId}>
               <Button variant="ghost" size="icon-sm" aria-label="Edit meeting" className="text-muted-foreground">
@@ -238,7 +239,7 @@ export function LiveSessionView({ session, workspaceId }: LiveSessionViewProps) 
 
       <dl className="divide-y text-sm">
         <Detail label="For">
-          <DocScope doc={session} />
+          <LiveSessionScope session={session} />
         </Detail>
         <Detail label="Organizer">
           {session.author ? (
@@ -250,7 +251,7 @@ export function LiveSessionView({ session, workspaceId }: LiveSessionViewProps) 
             <span className="text-muted-foreground">Unknown</span>
           )}
         </Detail>
-        <Detail label="My calendar">
+        {!chatCall && <Detail label="My calendar">
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
               {/* Plain links: they open the calendar with the meeting filled in, no account connection. */}
@@ -278,8 +279,8 @@ export function LiveSessionView({ session, workspaceId }: LiveSessionViewProps) 
             </div>
             <p className="text-xs text-muted-foreground">{addHint}</p>
           </div>
-        </Detail>
-        <Detail label="Invites">
+        </Detail>}
+        {!chatCall && <Detail label="Invites">
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               {session.calendar_event_id ? (
@@ -332,7 +333,7 @@ export function LiveSessionView({ session, workspaceId }: LiveSessionViewProps) 
             )}
             <RsvpList rsvps={rsvps} />
           </div>
-        </Detail>
+        </Detail>}
         {session.description && (
           <Detail label="Notes">
             <p className="whitespace-pre-wrap">{session.description}</p>
